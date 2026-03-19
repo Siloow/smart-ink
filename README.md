@@ -14,7 +14,7 @@ Entry points:
 ## Quick start
 1. Clone and install:
    - `git clone <repo-url>`
-   - `cd react-test-2` (or, if this is inside a `smart-ink/` monorepo: `cd smart-ink/react-test-2`)
+   - `cd smart-ink` 
    - `npm ci`
      - If you don't have `package-lock.json`, use `npm install` instead.
 2. Start the dev server:
