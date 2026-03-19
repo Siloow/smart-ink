@@ -19,6 +19,7 @@ import {
   downloadJSON,
   downloadBlob,
 } from './utils/sceneExporter'
+import { cloudRender, type RenderStatus } from './services/cloudRenderService'
 import * as THREE from 'three'
 
 const BG_PRESETS = {
@@ -115,6 +116,9 @@ function App() {
   const [threeScene, setThreeScene] = useState<THREE.Scene | null>(null)
   const [threeCamera, setThreeCamera] = useState<THREE.Camera | null>(null)
   const [isExportingBlender, setIsExportingBlender] = useState(false)
+  const [cloudRenderStatus, setCloudRenderStatus] = useState<RenderStatus>('idle')
+  const [cloudRenderMessage, setCloudRenderMessage] = useState('')
+  const [cloudRenderImage, setCloudRenderImage] = useState<string | null>(null)
 
   const canvasContainerRef = useRef<HTMLDivElement>(null)
 
@@ -150,6 +154,7 @@ function App() {
       ...currentScene,
       decalImage: uploadedImage,
       model,
+      decalVisible,
       decalRotation,
       decalScale,
       decalColor,
@@ -163,7 +168,7 @@ function App() {
     }
     updateScene(updated)
     setCurrentScene(updated)
-  }, [uploadedImage, model, decalRotation, decalScale, decalColor, decalOpacity, decalPosition, decalNormal, background, lightingPreset, cameraState])
+  }, [uploadedImage, model, decalVisible, decalRotation, decalScale, decalColor, decalOpacity, decalPosition, decalNormal, background, lightingPreset, cameraState])
 
   // Capture thumbnail on every change
   useEffect(() => {
@@ -217,6 +222,21 @@ function App() {
 
   // When business tools update the scene (status, tags, etc.), persist and sync editor state
   const handleBusinessSceneUpdate = (updated: SceneData) => {
+    // Important: business tool actions (like version restore) must update the editor's
+    // internal state variables, not just `currentScene`, otherwise the UI won't change.
+    setUploadedImage(updated.decalImage)
+    setModel(updated.model)
+    setDecalRotation(updated.decalRotation)
+    setDecalScale(updated.decalScale)
+    setDecalColor(updated.decalColor ?? '#ffffff')
+    setDecalOpacity(updated.decalOpacity)
+    setDecalVisible(updated.decalVisible)
+    setDecalPosition(updated.decalPosition ?? null)
+    setDecalNormal(updated.decalNormal ?? null)
+    setBackground(updated.background as BgKey)
+    setLightingPreset(updated.lightingPreset as LightingPresetKey)
+    setCameraState(updated.camera ?? CAMERA_PRESETS.threeQuarter)
+
     updateScene(updated)
     setCurrentScene(updated)
   }
@@ -392,6 +412,66 @@ function App() {
       console.error('Blender export failed:', e)
     } finally {
       setIsExportingBlender(false)
+    }
+  }
+
+  // Cloud render via server-side Blender/Cycles
+  const handleCloudRender = async () => {
+    setCloudRenderStatus('uploading')
+    setCloudRenderMessage('Preparing scene...')
+    setCloudRenderImage(null)
+
+    try {
+      // Build the same scene export as the local Blender export
+      const decals: Array<{
+        textureUrl: string
+        position: [number, number, number]
+        rotation: [number, number, number]
+        scale: [number, number]
+        opacity?: number
+      }> = []
+
+      if (uploadedImage && decalPosition) {
+        decals.push({
+          textureUrl: 'decal.png',
+          position: decalPosition,
+          rotation: [0, 0, (decalRotation * Math.PI) / 180],
+          scale: [decalScale, decalScale],
+          opacity: decalOpacity,
+        })
+      }
+
+      const blenderLightingPreset = mapLightingPresetToBlender(lightingPreset)
+      const sceneExport = exportSceneForBlender({
+        bodyMeshId: model,
+        decals,
+        camera: {
+          position: cameraState.position,
+          target: cameraState.target,
+          fov: cameraState.fov,
+        },
+        lightingPreset: blenderLightingPreset,
+        resolution: [2048, 2048],
+        samples: 128,
+      })
+
+      const imageUrl = await cloudRender(
+        sceneExport,
+        uploadedImage,
+        model,
+        {
+          onStatusChange: (status, message) => {
+            setCloudRenderStatus(status)
+            setCloudRenderMessage(message || '')
+          },
+        }
+      )
+
+      setCloudRenderImage(imageUrl)
+    } catch (e) {
+      console.error('Cloud render failed:', e)
+      setCloudRenderStatus('error')
+      setCloudRenderMessage(e instanceof Error ? e.message : 'Unknown error')
     }
   }
 
@@ -699,6 +779,56 @@ function App() {
               Place the JSON file, <code>decal.png</code> (if exported), and your body mesh (e.g. <code>FinalBaseMesh.obj</code>) in the same folder, then run:{' '}
               <code>blender --background --python sceneImporter.py -- scene-export.json</code>
             </p>
+
+            <div className="modal-blender-divider" />
+            <h3 className="modal-blender-title">Cloud Render (Cycles)</h3>
+            <p className="modal-blender-desc">
+              Render this scene on a cloud GPU with Blender Cycles. Returns a photorealistic image in 15-60 seconds.
+            </p>
+            <div className="modal-blender-actions">
+              <button
+                type="button"
+                className="btn-modal-blender"
+                onClick={handleCloudRender}
+                disabled={cloudRenderStatus === 'uploading' || cloudRenderStatus === 'rendering'}
+              >
+                {cloudRenderStatus === 'uploading' || cloudRenderStatus === 'rendering'
+                  ? cloudRenderMessage || 'Rendering...'
+                  : cloudRenderStatus === 'done'
+                    ? 'Render Again'
+                    : 'Render in Cloud'}
+              </button>
+              {cloudRenderImage && (
+                <a
+                  href={cloudRenderImage}
+                  download={`smart-ink-render-${Date.now()}.png`}
+                  className="btn-modal-blender btn-modal-blender--secondary"
+                >
+                  Download Render
+                </a>
+              )}
+            </div>
+            {cloudRenderStatus === 'error' && (
+              <p style={{ color: 'var(--red-500, #ef4444)', fontSize: '13px', marginTop: '8px' }}>
+                {cloudRenderMessage}
+              </p>
+            )}
+            {cloudRenderImage && (
+              <div
+                style={{
+                  marginTop: '12px',
+                  borderRadius: '8px',
+                  overflow: 'hidden',
+                  border: '1px solid var(--border-color, #333)',
+                }}
+              >
+                <img
+                  src={cloudRenderImage}
+                  alt="Cycles render"
+                  style={{ width: '100%', display: 'block' }}
+                />
+              </div>
+            )}
           </div>
         </div>
       )}
