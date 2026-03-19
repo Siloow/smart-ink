@@ -45,6 +45,3 @@ Note: `npm run dev` uses Vite configured with `host: "0.0.0.0"` (see `vite.confi
 - Blank page or errors in the browser: open the browser dev tools and check the console/network tabs for the first error.
 - Port already in use: Vite defaults to `5173`. Stop the conflicting process or change the port in `vite.config.ts`.
 - Dependency install issues: delete `node_modules` and run `npm ci` again.
-
-## License
-No `LICENSE` file was found in this repo. Add one if you want to explicitly define usage rights.
