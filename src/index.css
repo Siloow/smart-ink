@@ -1,0 +1,5 @@
+/* App shell: design tokens live in design-system.css */
+#root {
+  width: 100%;
+  min-height: 100vh;
+}
