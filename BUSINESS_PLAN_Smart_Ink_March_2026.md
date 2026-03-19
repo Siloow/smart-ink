@@ -34,15 +34,6 @@ Smart Ink provides a browser-based 3D editor where artists place tattoo designs 
 
 **For tattoo artists:** Create stunning portfolio images using 3D rendering instead of hiring a photographer. Manage client communication, pricing, and approvals in one place. Sell design concepts to a global audience.
 
-### Key Metrics (Target Year 1)
-
-| Metric | Target |
-|---|---|
-| Registered artists | 500 |
-| Active clients | 5,000 |
-| Monthly renders | 10,000 |
-| Community designs listed | 2,000 |
-
 ---
 
 ## 2. The Problem
@@ -216,16 +207,6 @@ The production backend requires user authentication, a database for scenes and u
 2. Replace localStorage with a proper database (Supabase or PostgreSQL).
 3. Set up user authentication (email + Google OAuth).
 4. Recruit 5 beta-testing tattoo artists.
-
-### 9.2 Key Milestones
-
-| Milestone | Timeline |
-|---|---|
-| Proof of concept complete (current UI + Blender render) | April 2026 |
-| Beta launch with 20 artists | June 2026 |
-| Marketplace and community features live | August 2026 |
-| Public launch with Pro tier | October 2026 |
-| 500 registered artists | March 2027 |
 
 ---
 
