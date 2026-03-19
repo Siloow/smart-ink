@@ -33,9 +33,10 @@ export default function VersioningTab({ currentScene, onSceneUpdate }: Versionin
   };
 
   const createVersion = () => {
-    if (!currentScene || !currentUser || !versionDescription.trim()) return;
+    if (!currentScene || !currentUser) return;
 
     const latestVersion = versionStorage.getLatestVersionNumber(currentScene.id);
+    const description = versionDescription.trim() || 'Snapshot saved';
     const newVersion: VersionHistory = {
       id: `version-${Date.now()}`,
       sceneId: currentScene.id,
@@ -43,7 +44,7 @@ export default function VersioningTab({ currentScene, onSceneUpdate }: Versionin
       sceneData: { ...currentScene, updatedAt: new Date() },
       createdAt: new Date(),
       createdBy: currentUser.id,
-      description: versionDescription,
+      description,
       changes: ['Scene updated']
     };
 
@@ -57,7 +58,9 @@ export default function VersioningTab({ currentScene, onSceneUpdate }: Versionin
   const restoreVersion = (version: VersionHistory) => {
     if (!currentScene) return;
     
-    const restoredScene = { ...version.sceneData, id: currentScene.id };
+    // Restore a snapshot into the editor. `id` must remain the current scene's id.
+    // Also bump `updatedAt` so lists/sorting reflect the restore action.
+    const restoredScene = { ...version.sceneData, id: currentScene.id, updatedAt: new Date() };
     onSceneUpdate(restoredScene);
   };
 
