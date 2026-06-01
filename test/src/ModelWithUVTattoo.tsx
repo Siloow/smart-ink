@@ -23,7 +23,6 @@ const fragmentShader = `
   uniform vec2 tattooCenter;
   uniform float tattooScale;
   uniform float tattooRotation;
-  uniform float tattooVisible;
   uniform float showSafeZone;
   uniform vec4 safeZoneBounds;
 
@@ -53,8 +52,7 @@ const fragmentShader = `
     offset = vec2(c * offset.x + s * offset.y, -s * offset.x + c * offset.y);
     vec2 tattooUV = offset / tattooScale + 0.5;
 
-    if (tattooVisible > 0.5 &&
-        tattooUV.x >= 0.0 && tattooUV.x <= 1.0 &&
+    if (tattooUV.x >= 0.0 && tattooUV.x <= 1.0 &&
         tattooUV.y >= 0.0 && tattooUV.y <= 1.0) {
       vec4 tattoo = texture2D(tattooTexture, tattooUV);
       tattoo.rgb *= 0.85;
@@ -134,17 +132,12 @@ export default function ModelWithUVTattoo({
   setDecalVisible,
   showSafeZone = true,
 }: ModelWithUVTattooProps) {
-  const { camera, scene } = useThree();
+  const { camera } = useThree();
   const [cloneGroup, setCloneGroup] = useState<THREE.Object3D | null>(null);
   const meshRef = useRef<THREE.Mesh | null>(null);
   const tattooCenter = useRef(new THREE.Vector2(0.5, 0.5));
   const [hasPlaced, setHasPlaced] = useState(false);
-  const hasPlacedRef = useRef(false);
   const isDragging = useRef(false);
-
-  useEffect(() => {
-    hasPlacedRef.current = hasPlaced;
-  }, [hasPlaced]);
 
   const logoTexture = useLoader(TextureLoader, '/logo.png');
   const monkGltf = useLoader(GLTFLoader, '/monk.glb');
@@ -177,7 +170,6 @@ export default function ModelWithUVTattoo({
           tattooCenter: { value: new THREE.Vector2(0.5, 0.5) },
           tattooScale: { value: 0.12 },
           tattooRotation: { value: 0 },
-          tattooVisible: { value: 0.0 },
           showSafeZone: { value: 1.0 },
           safeZoneBounds: {
             value: new THREE.Vector4(
@@ -203,7 +195,6 @@ export default function ModelWithUVTattoo({
     shaderMaterial.uniforms.tattooScale.value = scaleInUV;
     shaderMaterial.uniforms.tattooRotation.value =
       THREE.MathUtils.degToRad(decalRotation);
-    shaderMaterial.uniforms.tattooVisible.value = hasPlacedRef.current ? 1.0 : 0.0;
     shaderMaterial.uniforms.showSafeZone.value = showSafeZone ? 1.0 : 0.0;
   });
 
@@ -265,35 +256,17 @@ export default function ModelWithUVTattoo({
     return uv;
   }, []);
 
-  const setOrbitEnabled = useCallback(
-    (enabled: boolean) => {
-      const controls = (scene as THREE.Scene & { orbitControls?: { enabled: boolean } })
-        .orbitControls;
-      if (controls) controls.enabled = enabled;
-    },
-    [scene]
-  );
-
   const onPointerDown = useCallback(
     (e: PointerEvent) => {
       const uv = getUVFromEvent(e);
-      if (!uv) return;
-      clampToSafeZone(uv, scaleInUV);
-
-      if (e.metaKey) {
-        if (!hasPlacedRef.current) return;
+      if (uv) {
         isDragging.current = true;
-        setOrbitEnabled(false);
+        setHasPlaced(true);
+        clampToSafeZone(uv, scaleInUV);
         tattooCenter.current.copy(uv);
-        return;
       }
-
-      setHasPlaced(true);
-      hasPlacedRef.current = true;
-      tattooCenter.current.copy(uv);
-      isDragging.current = false;
     },
-    [getUVFromEvent, scaleInUV, clampToSafeZone, setOrbitEnabled]
+    [getUVFromEvent, scaleInUV, clampToSafeZone]
   );
 
   const onPointerMove = useCallback(
@@ -309,11 +282,8 @@ export default function ModelWithUVTattoo({
   );
 
   const onPointerUp = useCallback(() => {
-    if (isDragging.current) {
-      isDragging.current = false;
-      setOrbitEnabled(true);
-    }
-  }, [setOrbitEnabled]);
+    isDragging.current = false;
+  }, []);
 
   useEffect(() => {
     window.addEventListener('pointerdown', onPointerDown);

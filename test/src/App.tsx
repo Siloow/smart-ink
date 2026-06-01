@@ -106,18 +106,6 @@ function App() {
   const [performanceMode, setPerformanceMode] = useState(false)
   const [uvTattooMode, setUvTattooMode] = useState(false)
 
-  const handleUvTattooModeToggle = useCallback(() => {
-    setUvTattooMode((prev) => {
-      const enteringUvMode = !prev
-      if (enteringUvMode) {
-        setDecalVisible(false)
-        setDecalPosition(null)
-        setDecalNormal(null)
-      }
-      return enteringUvMode
-    })
-  }, [])
-
   // Export state
   const [showExportModal, setShowExportModal] = useState(false)
   const [exportPreset, setExportPreset] = useState('instagram')
@@ -561,7 +549,7 @@ function App() {
           <button
             type="button"
             className={`tool-btn-nav ${uvTattooMode ? 'tool-btn-nav--green-active' : 'tool-btn-nav--blue'}`}
-            onClick={handleUvTattooModeToggle}
+            onClick={() => setUvTattooMode(!uvTattooMode)}
             title="Toggle UV-space tattoo projection"
           >
             UV mode
