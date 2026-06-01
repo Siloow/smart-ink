@@ -204,24 +204,26 @@ function App() {
   // Save editor state to current scene (except thumbnail)
   useEffect(() => {
     if (!currentScene) return
-    const updated: SceneData = {
-      ...currentScene,
-      decalImage: uploadedImage,
-      model,
-      decalVisible,
-      decalRotation,
-      decalScale,
-      decalColor,
-      decalOpacity,
-      decalPosition,
-      decalNormal,
-      background,
-      lightingPreset,
-      camera: cameraState,
-      // thumbnail will be updated in a separate effect
-    }
-    updateScene(updated)
-    setCurrentScene(updated)
+    const id = setTimeout(() => {
+      const updated: SceneData = {
+        ...currentScene,
+        decalImage: uploadedImage,
+        model,
+        decalVisible,
+        decalRotation,
+        decalScale,
+        decalColor,
+        decalOpacity,
+        decalPosition,
+        decalNormal,
+        background,
+        lightingPreset,
+        camera: cameraState,
+        // thumbnail will be updated in a separate effect
+      }
+      void updateScene(updated).then(() => setCurrentScene(updated))
+    }, 250)
+    return () => clearTimeout(id)
   }, [uploadedImage, model, decalVisible, decalRotation, decalScale, decalColor, decalOpacity, decalPosition, decalNormal, background, lightingPreset, cameraState])
 
   // Capture thumbnail on every change
@@ -237,23 +239,20 @@ function App() {
           if (dataUrl && dataUrl.length > 100) {
             if (currentScene.thumbnail !== dataUrl) {
               const updated: SceneData = { ...currentScene, thumbnail: dataUrl }
-              updateScene(updated)
-              setCurrentScene(updated)
+              void updateScene(updated).then(() => setCurrentScene(updated))
             }
           } else {
             // Fallback: blank or failed
             if (currentScene.thumbnail !== null) {
               const updated: SceneData = { ...currentScene, thumbnail: null }
-              updateScene(updated)
-              setCurrentScene(updated)
+              void updateScene(updated).then(() => setCurrentScene(updated))
             }
           }
         } catch (e) {
           // Fallback: error
           if (currentScene.thumbnail !== null) {
             const updated: SceneData = { ...currentScene, thumbnail: null }
-            updateScene(updated)
-            setCurrentScene(updated)
+            void updateScene(updated).then(() => setCurrentScene(updated))
           }
         }
       }
@@ -291,8 +290,7 @@ function App() {
     setLightingPreset(updated.lightingPreset as LightingPresetKey)
     setCameraState(updated.camera ?? CAMERA_PRESETS.threeQuarter)
 
-    updateScene(updated)
-    setCurrentScene(updated)
+    void updateScene(updated).then(() => setCurrentScene(updated))
   }
 
   // Export functionality using Three.js renderer
@@ -616,6 +614,7 @@ function App() {
               camera={{ position: cameraState.position, fov: cameraState.fov }}
               shadows={!performanceMode}
               dpr={performanceMode ? 0.7 : window.devicePixelRatio}
+              gl={{ preserveDrawingBuffer: true, antialias: true }}
             >
         <ExportRenderer onRendererReady={handleRendererReady} />
         <CinematicLights key={lightingPreset} preset={lightingPreset} performanceMode={performanceMode} />
