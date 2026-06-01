@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { loadScenes, addScene, deleteScene, updateScene } from './sceneStorage';
 import type { SceneData } from './types';
 import CommunityPage from './components/community/CommunityPage';
@@ -15,9 +15,13 @@ export default function ScenesDashboard({ onSelectScene, onOpenLanding }: Props)
   const [searchQuery, setSearchQuery] = useState('');
   const [activeView, setActiveView] = useState<'myScenes' | 'community'>('myScenes');
 
-  useEffect(() => {
-    setScenes(loadScenes());
+  const refreshScenes = useCallback(async () => {
+    setScenes(await loadScenes());
   }, []);
+
+  useEffect(() => {
+    void refreshScenes();
+  }, [refreshScenes]);
 
   const filteredScenes = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -54,14 +58,14 @@ export default function ScenesDashboard({ onSelectScene, onOpenLanding }: Props)
       updatedAt: new Date(),
       createdBy: 'admin-1',
     };
-    addScene(newScene);
-    setScenes(loadScenes());
-    onSelectScene(newScene);
+    void addScene(newScene).then(() => {
+      void refreshScenes();
+      onSelectScene(newScene);
+    });
   };
 
   const handleDelete = (id: string) => {
-    deleteScene(id);
-    setScenes(loadScenes());
+    void deleteScene(id).then(refreshScenes);
   };
 
   const handleNameClick = (scene: SceneData) => {
@@ -77,8 +81,7 @@ export default function ScenesDashboard({ onSelectScene, onOpenLanding }: Props)
     const trimmed = editValue.trim();
     if (trimmed && trimmed !== scene.name) {
       const updated = { ...scene, name: trimmed };
-      updateScene(updated);
-      setScenes(loadScenes());
+      void updateScene(updated).then(refreshScenes);
     }
     setEditingId(null);
   };

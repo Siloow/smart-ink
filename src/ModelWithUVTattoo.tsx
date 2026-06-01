@@ -134,7 +134,7 @@ export default function ModelWithUVTattoo({
   setDecalVisible,
   showSafeZone = true,
 }: ModelWithUVTattooProps) {
-  const { camera, scene } = useThree();
+  const { camera, scene, gl } = useThree();
   const [cloneGroup, setCloneGroup] = useState<THREE.Object3D | null>(null);
   const meshRef = useRef<THREE.Mesh | null>(null);
   const tattooCenter = useRef(new THREE.Vector2(0.5, 0.5));
@@ -246,8 +246,9 @@ export default function ModelWithUVTattoo({
 
   const getUVFromEvent = useCallback(
     (event: PointerEvent) => {
-      mouse.current.x = (event.clientX / window.innerWidth) * 2 - 1;
-      mouse.current.y = -(event.clientY / window.innerHeight) * 2 + 1;
+      const rect = gl.domElement.getBoundingClientRect();
+      mouse.current.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.current.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
       raycaster.current.setFromCamera(mouse.current, camera);
       const m = meshRef.current;
       if (!m) return null;
@@ -255,7 +256,7 @@ export default function ModelWithUVTattoo({
       if (hits.length > 0 && hits[0].uv) return hits[0].uv.clone();
       return null;
     },
-    [camera]
+    [camera, gl]
   );
 
   const clampToSafeZone = useCallback((uv: THREE.Vector2, scale: number) => {
@@ -316,15 +317,16 @@ export default function ModelWithUVTattoo({
   }, [setOrbitEnabled]);
 
   useEffect(() => {
-    window.addEventListener('pointerdown', onPointerDown);
+    const el = gl.domElement;
+    el.addEventListener('pointerdown', onPointerDown);
     window.addEventListener('pointermove', onPointerMove);
     window.addEventListener('pointerup', onPointerUp);
     return () => {
-      window.removeEventListener('pointerdown', onPointerDown);
+      el.removeEventListener('pointerdown', onPointerDown);
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);
     };
-  }, [onPointerDown, onPointerMove, onPointerUp]);
+  }, [onPointerDown, onPointerMove, onPointerUp, gl]);
 
   if (!cloneGroup) return null;
   return <primitive object={cloneGroup} />;

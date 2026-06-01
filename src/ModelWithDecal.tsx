@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { TextureLoader, Object3D, Mesh, MeshBasicMaterial, Vector3, Texture, Group, Euler } from 'three';
 
 const DECAL_SIZE = new Vector3(1, 1, 1);
+const PROJECTION_DEPTH = 0.5;
 
 type ModelType = 'Monk' | 'FinalBaseMesh';
 
@@ -35,11 +36,11 @@ function eulerFromDeg(deg: number, normal: THREE.Vector3) {
 
 export default function ModelWithDecal({ uploadedImage, model, decalRotation, decalScale, decalColor, decalOpacity, setDecalVisible, setDecalOriginData, decalPosition, decalNormal }: MonkWithDecalProps) {
   const group = useRef<THREE.Group>(null);
-  const { camera, scene } = useThree();
+  const { camera, scene, gl } = useThree();
   const [targetMesh, setTargetMesh] = useState<Mesh | null>(null);
   const [decal, setDecal] = useState<Mesh | null>(null);
   const [isMovingDecal, setIsMovingDecal] = useState(false);
-  const [decalMaterial, setDecalMaterial] = useState<MeshBasicMaterial | null>(null);
+  const [decalMaterial, setDecalMaterial] = useState<THREE.MeshStandardMaterial | null>(null);
   const [helper] = useState(() => new Object3D());
   const raycaster = useRef(new THREE.Raycaster());
   const logoTexture = useLoader(TextureLoader, '/logo.png');
@@ -60,6 +61,7 @@ export default function ModelWithDecal({ uploadedImage, model, decalRotation, de
       image.src = uploadedImage;
       image.onload = () => {
         texture.image = image;
+        texture.colorSpace = THREE.SRGBColorSpace;
         texture.needsUpdate = true;
       };
       return texture;
@@ -67,16 +69,22 @@ export default function ModelWithDecal({ uploadedImage, model, decalRotation, de
     return null;
   }, [uploadedImage]);
 
+  useEffect(() => {
+    if (logoTexture) logoTexture.colorSpace = THREE.SRGBColorSpace;
+  }, [logoTexture]);
+
   // Setup decal material
   useEffect(() => {
     const tex = uploadedTexture || logoTexture;
     if (tex) {
       setDecalMaterial(
-        new MeshBasicMaterial({
+        new THREE.MeshStandardMaterial({
           map: tex,
           color: new THREE.Color(decalColor),
           transparent: true,
           opacity: decalOpacity,
+          roughness: 0.85,
+          metalness: 0.0,
           depthWrite: false,
           polygonOffset: true,
           polygonOffsetFactor: -4,
@@ -128,7 +136,7 @@ export default function ModelWithDecal({ uploadedImage, model, decalRotation, de
     if (decal) {
       scene.remove(decal);
       (decal.geometry as THREE.BufferGeometry).dispose();
-      (decal.material as MeshBasicMaterial).dispose();
+      (decal.material as THREE.MeshStandardMaterial).dispose();
       setDecal(null);
     }
     setDecalVisible(false);
@@ -148,7 +156,7 @@ export default function ModelWithDecal({ uploadedImage, model, decalRotation, de
       (decal.geometry as THREE.BufferGeometry).dispose();
       // Compute rotation from normal and user rotation
       const euler = eulerFromDeg(decalRotation, decalOrigin.normal);
-      const size = new Vector3(decalScale, decalScale, decalScale);
+      const size = new Vector3(decalScale, decalScale, PROJECTION_DEPTH);
       decal.geometry = new DecalGeometry(targetMesh, decalOrigin.position, euler, size);
     }
   }, [decalRotation, decalScale, decal, decalOrigin, targetMesh, decalMaterial]);
@@ -165,7 +173,7 @@ export default function ModelWithDecal({ uploadedImage, model, decalRotation, de
       const position = new THREE.Vector3(...decalPosition);
       const normal = new THREE.Vector3(...decalNormal);
       const euler = eulerFromDeg(decalRotation, normal);
-      const size = new Vector3(decalScale, decalScale, decalScale);
+      const size = new Vector3(decalScale, decalScale, PROJECTION_DEPTH);
       const decalGeometry = new DecalGeometry(targetMesh, position, euler, size);
       const newDecal = new Mesh(decalGeometry, decalMaterial.clone());
       scene.add(newDecal);
@@ -176,14 +184,22 @@ export default function ModelWithDecal({ uploadedImage, model, decalRotation, de
     // eslint-disable-next-line
   }, [decalPosition, decalNormal, targetMesh, decalMaterial]);
 
+  const pointerToNdc = useCallback(
+    (event: PointerEvent) => {
+      const rect = gl.domElement.getBoundingClientRect();
+      return new THREE.Vector2(
+        ((event.clientX - rect.left) / rect.width) * 2 - 1,
+        -((event.clientY - rect.top) / rect.height) * 2 + 1
+      );
+    },
+    [gl]
+  );
+
   // Handle pointer down
   const onPointerDown = useCallback((event: PointerEvent) => {
     if (!targetMesh || !decalMaterial) return;
     const metaKey = event.metaKey;
-    const mouse = new THREE.Vector2(
-      (event.clientX / window.innerWidth) * 2 - 1,
-      -(event.clientY / window.innerHeight) * 2 + 1
-    );
+    const mouse = pointerToNdc(event);
     raycaster.current.setFromCamera(mouse, camera);
     if (metaKey && decal) {
       // Check if pointer is over the decal
@@ -205,12 +221,12 @@ export default function ModelWithDecal({ uploadedImage, model, decalRotation, de
       if (decal) {
         scene.remove(decal);
         (decal.geometry as THREE.BufferGeometry).dispose();
-        (decal.material as MeshBasicMaterial).dispose();
+        (decal.material as THREE.MeshStandardMaterial).dispose();
         setDecal(null);
       }
       // Compute rotation from normal and user rotation
       const euler = eulerFromDeg(decalRotation, normal);
-      const size = new Vector3(decalScale, decalScale, decalScale);
+      const size = new Vector3(decalScale, decalScale, PROJECTION_DEPTH);
       const decalGeometry = new DecalGeometry(targetMesh, position, euler, size);
       const newDecal = new Mesh(decalGeometry, decalMaterial.clone());
       scene.add(newDecal);
@@ -218,15 +234,12 @@ export default function ModelWithDecal({ uploadedImage, model, decalRotation, de
       setDecalOrigin({ position, normal });
       if (setDecalOriginData) setDecalOriginData({ position: [position.x, position.y, position.z], normal: [normal.x, normal.y, normal.z] });
     }
-  }, [targetMesh, decal, decalMaterial, camera, helper, scene, decalRotation, decalScale]);
+  }, [targetMesh, decal, decalMaterial, camera, helper, scene, decalRotation, decalScale, pointerToNdc]);
 
   // Handle pointer move
   const onPointerMove = useCallback((event: PointerEvent) => {
     if (!isMovingDecal || !targetMesh || !decal) return;
-    const mouse = new THREE.Vector2(
-      (event.clientX / window.innerWidth) * 2 - 1,
-      -(event.clientY / window.innerHeight) * 2 + 1
-    );
+    const mouse = pointerToNdc(event);
     raycaster.current.setFromCamera(mouse, camera);
     const intersects = raycaster.current.intersectObject(targetMesh);
     if (intersects.length > 0) {
@@ -242,12 +255,12 @@ export default function ModelWithDecal({ uploadedImage, model, decalRotation, de
       if (decal) {
         (decal.geometry as THREE.BufferGeometry).dispose();
         const euler = eulerFromDeg(decalRotation, normal);
-        const size = new Vector3(decalScale, decalScale, decalScale);
+        const size = new Vector3(decalScale, decalScale, PROJECTION_DEPTH);
         decal.geometry = new DecalGeometry(targetMesh, position, euler, size);
       }
       if (setDecalOriginData) setDecalOriginData({ position: [position.x, position.y, position.z], normal: [normal.x, normal.y, normal.z] });
     }
-  }, [isMovingDecal, targetMesh, decal, camera, helper, decalOrigin, decalRotation, decalScale]);
+  }, [isMovingDecal, targetMesh, decal, camera, helper, decalOrigin, decalRotation, decalScale, pointerToNdc]);
 
   // Handle pointer up
   const onPointerUp = useCallback(() => {
@@ -259,15 +272,16 @@ export default function ModelWithDecal({ uploadedImage, model, decalRotation, de
 
   // Attach/detach event listeners
   useEffect(() => {
-    window.addEventListener('pointerdown', onPointerDown);
+    const el = gl.domElement;
+    el.addEventListener('pointerdown', onPointerDown);
     window.addEventListener('pointermove', onPointerMove);
     window.addEventListener('pointerup', onPointerUp);
     return () => {
-      window.removeEventListener('pointerdown', onPointerDown);
+      el.removeEventListener('pointerdown', onPointerDown);
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);
     };
-  }, [onPointerDown, onPointerMove, onPointerUp]);
+  }, [onPointerDown, onPointerMove, onPointerUp, gl]);
 
   // Render model
   if (model === 'FinalBaseMesh') {
