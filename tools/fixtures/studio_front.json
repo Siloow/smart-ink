@@ -1,0 +1,25 @@
+{
+  "version": "2.0.0",
+  "bodyMesh": "FinalBaseMesh",
+  "decals": [],
+  "lighting": {
+    "presetName": "studio",
+    "lights": [
+      { "type": "ambient", "position": [0, 0, 0], "intensity": 0.136, "color": "#ffffff", "castShadow": false },
+      { "type": "directional", "position": [8, 6, 8], "target": [0, 0, 0], "intensity": 1, "color": "#ffffff", "castShadow": true, "blenderAreaSize": [2, 2] },
+      { "type": "directional", "position": [-6, 2, 4], "target": [0, 0, 0], "intensity": 0.455, "color": "#aaffee", "castShadow": false, "blenderAreaSize": [2, 2] }
+    ]
+  },
+  "camera": {
+    "position": [0, 0, 8],
+    "target": [0, 0, 0],
+    "fov": 45,
+    "aspectRatio": 1
+  },
+  "background": { "type": "solid", "color": "#ffffff" },
+  "renderSettings": {
+    "resolution": [2048, 2048],
+    "samples": 256,
+    "outputPath": "./renders/output.png"
+  }
+}

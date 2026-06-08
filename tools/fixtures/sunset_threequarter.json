@@ -1,0 +1,31 @@
+{
+  "version": "2.0.0",
+  "bodyMesh": "FinalBaseMesh",
+  "decals": [],
+  "lighting": {
+    "presetName": "sunset",
+    "lights": [
+      { "type": "ambient", "position": [0, 0, 0], "intensity": 0.067, "color": "#ffffff", "castShadow": false },
+      { "type": "directional", "position": [-8, 6, 8], "target": [0, 0, 0], "intensity": 1, "color": "#ffb37b", "castShadow": true, "blenderAreaSize": [2, 2] },
+      { "type": "directional", "position": [8, 2, -8], "target": [0, 0, 0], "intensity": 0.333, "color": "#ffd1a1", "castShadow": false, "blenderAreaSize": [2, 2] }
+    ]
+  },
+  "camera": {
+    "position": [6, 4, 6],
+    "target": [0, 0, 0],
+    "fov": 45,
+    "aspectRatio": 1
+  },
+  "background": {
+    "type": "gradient",
+    "gradientStops": [
+      { "color": "#ffecd2", "position": 0 },
+      { "color": "#fcb69f", "position": 1 }
+    ]
+  },
+  "renderSettings": {
+    "resolution": [2048, 2048],
+    "samples": 256,
+    "outputPath": "./renders/output.png"
+  }
+}
