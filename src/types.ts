@@ -18,6 +18,11 @@ export interface SceneData {
     target: [number, number, number];
     fov: number;
   };
+  bodyMeshId?: string;
+  skinToneId?: string;
+  poseId?: string;
+  lookId?: string;
+  qualityTier?: 'preview' | 'final';
   // Business tools fields
   version?: number;
   parentVersionId?: string; // For version branching

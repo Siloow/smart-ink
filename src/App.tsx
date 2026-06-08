@@ -3,7 +3,7 @@ import { Canvas, useThree } from '@react-three/fiber'
 // import { OrbitControls } from '@react-three/drei'
 import OrbitControlsWithCmdLock from './OrbitControlsWithCmdLock'
 import ModelWithDecal from './ModelWithDecal'
-import ModelWithUVTattoo from './ModelWithUVTattoo'
+import ModelWithUVTattoo, { type ModelWithUVTattooHandle } from './ModelWithUVTattoo'
 import CinematicLights from './CinematicLights'
 import TopMenuBar from './TopMenuBar'
 import ScenesDashboard from './ScenesDashboard'
@@ -21,8 +21,25 @@ import {
   type ExportForBlenderParams,
 } from './utils/sceneExporter'
 import type { LightingPresetKey } from './config/lightingPresets'
-import { cloudRender, type RenderStatus } from './services/cloudRenderService'
+import { cloudRender, renderContract, type RenderStatus } from './services/cloudRenderService'
+import { bakeInkLayer } from './render/bakeInkLayer'
+import { buildRenderContract } from './render/buildContract'
+import { REGISTRY, findById } from './render/registry'
+import { migrateScene } from './sceneStorage'
 import * as THREE from 'three'
+
+function previewModelForBody(bodyMeshId: string): 'Monk' | 'FinalBaseMesh' {
+  return findById(REGISTRY.bodyMeshes, bodyMeshId)?.previewModel ?? 'FinalBaseMesh'
+}
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(blob)
+  })
+}
 
 const BG_PRESETS = {
   white: { background: '#fff' },
@@ -105,6 +122,12 @@ function App() {
   const [cameraState, setCameraState] = useState<{ position: [number, number, number], target: [number, number, number], fov: number }>(CAMERA_PRESETS.threeQuarter)
   const [performanceMode, setPerformanceMode] = useState(false)
   const [uvTattooMode, setUvTattooMode] = useState(false)
+  const [bodyMeshId, setBodyMeshId] = useState('body_full')
+  const [skinToneId, setSkinToneId] = useState('tone_03')
+  const [poseId, setPoseId] = useState('neutral')
+  const [lookId, setLookId] = useState('studio_softbox')
+  const [qualityTier, setQualityTier] = useState<'preview' | 'final'>('final')
+  const uvPlacementRef = useRef<ModelWithUVTattooHandle>(null)
 
   const handleUvTattooModeToggle = useCallback(() => {
     setUvTattooMode((prev) => {
@@ -185,19 +208,32 @@ function App() {
 
   // Load scene into editor state (optional: open in business mode when coming from dashboard "Business")
   const loadScene = (scene: SceneData, initialMode?: 'creative' | 'business') => {
-    setCurrentScene(scene)
-    setUploadedImage(scene.decalImage)
-    setModel(scene.model)
-    setDecalRotation(scene.decalRotation)
-    setDecalScale(scene.decalScale)
-    setDecalColor(scene.decalColor ?? '#ffffff')
-    setDecalOpacity(scene.decalOpacity ?? 1)
-    setDecalPosition(scene.decalPosition ?? null)
-    setDecalNormal(scene.decalNormal ?? null)
-    setBackground(scene.background as BgKey)
-    setLightingPreset(scene.lightingPreset as LightingPresetKey)
+    const migrated = migrateScene(scene)
+    setCurrentScene(migrated)
+    setUploadedImage(migrated.decalImage)
+    setBodyMeshId(migrated.bodyMeshId!)
+    setSkinToneId(migrated.skinToneId!)
+    setPoseId(migrated.poseId!)
+    setLookId(migrated.lookId!)
+    setQualityTier(migrated.qualityTier!)
+    setModel(previewModelForBody(migrated.bodyMeshId!))
+    const look = findById(REGISTRY.looks, migrated.lookId!)
+    if (look) {
+      setLightingPreset(look.previewLighting)
+      setBackground(look.previewBackground as BgKey)
+    }
+    setDecalRotation(migrated.decalRotation)
+    setDecalScale(migrated.decalScale)
+    setDecalColor(migrated.decalColor ?? '#ffffff')
+    setDecalOpacity(migrated.decalOpacity ?? 1)
+    setDecalPosition(migrated.decalPosition ?? null)
+    setDecalNormal(migrated.decalNormal ?? null)
+    if (!look) {
+      setBackground(migrated.background as BgKey)
+      setLightingPreset(migrated.lightingPreset as LightingPresetKey)
+    }
     setShowDashboard(false)
-    setCameraState(scene.camera ?? CAMERA_PRESETS.threeQuarter)
+    setCameraState(migrated.camera ?? CAMERA_PRESETS.threeQuarter)
     if (initialMode) setEditorMode(initialMode)
   }
 
@@ -219,12 +255,17 @@ function App() {
         background,
         lightingPreset,
         camera: cameraState,
+        bodyMeshId,
+        skinToneId,
+        poseId,
+        lookId,
+        qualityTier,
         // thumbnail will be updated in a separate effect
       }
       void updateScene(updated).then(() => setCurrentScene(updated))
     }, 250)
     return () => clearTimeout(id)
-  }, [uploadedImage, model, decalVisible, decalRotation, decalScale, decalColor, decalOpacity, decalPosition, decalNormal, background, lightingPreset, cameraState])
+  }, [uploadedImage, model, decalVisible, decalRotation, decalScale, decalColor, decalOpacity, decalPosition, decalNormal, background, lightingPreset, cameraState, bodyMeshId, skinToneId, poseId, lookId, qualityTier])
 
   // Capture thumbnail on every change
   useEffect(() => {
@@ -289,8 +330,14 @@ function App() {
     setBackground(updated.background as BgKey)
     setLightingPreset(updated.lightingPreset as LightingPresetKey)
     setCameraState(updated.camera ?? CAMERA_PRESETS.threeQuarter)
+    const migrated = migrateScene(updated)
+    setBodyMeshId(migrated.bodyMeshId!)
+    setSkinToneId(migrated.skinToneId!)
+    setPoseId(migrated.poseId!)
+    setLookId(migrated.lookId!)
+    setQualityTier(migrated.qualityTier!)
 
-    void updateScene(updated).then(() => setCurrentScene(updated))
+    void updateScene(migrated).then(() => setCurrentScene(migrated))
   }
 
   // Export functionality using Three.js renderer
@@ -452,23 +499,61 @@ function App() {
     setCloudRenderMessage('Preparing scene...')
     setCloudRenderImage(null)
 
+    const onStatusChange = (status: RenderStatus, message?: string) => {
+      setCloudRenderStatus(status)
+      setCloudRenderMessage(message || '')
+    }
+
     try {
+      if (uvTattooMode) {
+        const placement = uvPlacementRef.current?.getPlacement()
+        if (!placement?.hasPlaced) {
+          setCloudRenderStatus('error')
+          setCloudRenderMessage('Place the tattoo on the mesh in UV mode first.')
+          return
+        }
+        if (!uploadedImage) {
+          setCloudRenderStatus('error')
+          setCloudRenderMessage('Upload a design image first.')
+          return
+        }
+
+        setCloudRenderMessage('Baking UV ink layer...')
+        const inkBlob = await bakeInkLayer({
+          tattooImage: uploadedImage,
+          center: placement.center,
+          scaleUV: placement.scaleUV,
+          rotationRad: placement.rotationRad,
+        })
+        const inkUrl = await blobToDataUrl(inkBlob)
+
+        const canvas = threeRenderer?.domElement
+        const aspect =
+          canvas && canvas.clientHeight > 0 ? canvas.clientWidth / canvas.clientHeight : 1
+        const outHeight = Math.max(1, Math.round(2048 / aspect))
+
+        const contract = buildRenderContract(
+          { bodyMeshId, skinToneId, poseId, lookId, qualityTier },
+          {
+            position: cameraState.position,
+            target: cameraState.target,
+            fov: cameraState.fov,
+            aspect,
+          },
+          inkUrl,
+          { width: 2048, height: outHeight }
+        )
+
+        const imageUrl = await renderContract(contract, inkBlob, { onStatusChange })
+        setCloudRenderImage(imageUrl)
+        return
+      }
+
       const sceneExport = exportSceneForBlender(
         buildBlenderExportParams({ samples: 128, decalTextureFilename: 'decal.png' })
       )
 
-      const imageUrl = await cloudRender(
-        sceneExport,
-        uploadedImage,
-        model,
-        {
-          onStatusChange: (status, message) => {
-            setCloudRenderStatus(status)
-            setCloudRenderMessage(message || '')
-          },
-        }
-      )
-
+      const imageUrl = await cloudRender(sceneExport, uploadedImage, model, { onStatusChange })
       setCloudRenderImage(imageUrl)
     } catch (e) {
       console.error('Cloud render failed:', e)
@@ -620,6 +705,7 @@ function App() {
         <CinematicLights key={lightingPreset} preset={lightingPreset} performanceMode={performanceMode} />
         {uvTattooMode ? (
           <ModelWithUVTattoo
+            ref={uvPlacementRef}
             key={`uv-${model}`}
             uploadedImage={uploadedImage}
             model={model}

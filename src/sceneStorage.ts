@@ -3,6 +3,22 @@ import type { SceneData } from './types';
 
 const STORAGE_KEY = 'scenes';
 
+const MODEL_TO_BODY: Record<string, string> = {
+  FinalBaseMesh: 'body_full',
+  Monk: 'forearm',
+};
+
+export function migrateScene(s: SceneData): SceneData {
+  return {
+    ...s,
+    bodyMeshId: s.bodyMeshId ?? MODEL_TO_BODY[s.model] ?? 'body_full',
+    skinToneId: s.skinToneId ?? 'tone_03',
+    poseId: s.poseId ?? 'neutral',
+    lookId: s.lookId ?? 'studio_softbox',
+    qualityTier: s.qualityTier ?? 'final',
+  };
+}
+
 type PersistedScene = Omit<SceneData, 'decalImage' | 'thumbnail'>;
 
 function decalKey(sceneId: string) {
@@ -38,7 +54,7 @@ async function hydrateScene(raw: RawStoredScene): Promise<SceneData> {
     legacyThumb != null && legacyThumb.length > 0
       ? legacyThumb
       : await loadDataUrl(thumbKey(raw.id));
-  return { ...rest, decalImage, thumbnail };
+  return migrateScene({ ...rest, decalImage, thumbnail });
 }
 
 async function dehydrateScene(scene: SceneData): Promise<PersistedScene> {
