@@ -1,3 +1,6 @@
+import { validateContract } from '../render/buildContract';
+import type { RenderContract } from '../render/contract';
+
 const RENDER_URL = 'https://smart-ink-render-615593848551.europe-west4.run.app';
 
 export type RenderStatus = 'idle' | 'uploading' | 'rendering' | 'done' | 'error';
@@ -64,6 +67,41 @@ export async function cloudRender(
   const imageUrl = URL.createObjectURL(imageBlob);
   onStatusChange?.('done', 'Render complete!');
   return imageUrl;
+}
+
+export async function renderContract(
+  contract: RenderContract,
+  inkLayer: Blob,
+  opts?: CloudRenderOptions
+): Promise<string> {
+  const errs = validateContract(contract);
+  if (errs.length) throw new Error('Invalid contract: ' + errs.join('; '));
+
+  opts?.onStatusChange?.('uploading', 'Sending shot to render server...');
+  const form = new FormData();
+  form.append(
+    'contract',
+    new Blob([JSON.stringify(contract)], { type: 'application/json' }),
+    'contract.json'
+  );
+  form.append('ink_layer', inkLayer, 'ink.png');
+
+  opts?.onStatusChange?.('rendering', 'Rendering with Cycles...');
+  const res = await fetch(`${RENDER_URL}/render-v2`, { method: 'POST', body: form });
+  if (!res.ok) {
+    let msg = 'Render failed';
+    try {
+      const j = await res.json();
+      msg = j.error || msg;
+    } catch {
+      /* not JSON */
+    }
+    opts?.onStatusChange?.('error', msg);
+    throw new Error(msg);
+  }
+  const blob = await res.blob();
+  opts?.onStatusChange?.('done', 'Render complete!');
+  return URL.createObjectURL(blob);
 }
 
 export async function checkRenderServer(): Promise<boolean> {

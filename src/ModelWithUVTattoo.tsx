@@ -1,8 +1,17 @@
-import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
+import {
+  useRef,
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  forwardRef,
+  useImperativeHandle,
+} from 'react';
 import { useLoader, useThree, useFrame } from '@react-three/fiber';
 import { GLTFLoader, OBJLoader } from 'three-stdlib';
 import * as THREE from 'three';
 import { TextureLoader } from 'three';
+import { TATTOO_LAYER_GLSL } from './render/tattooLayer';
 
 const SAFE_ZONE = { uMin: 0.05, uMax: 0.95, vMin: 0.08, vMax: 0.92 };
 
@@ -18,6 +27,8 @@ const vertexShader = `
 `;
 
 const fragmentShader = `
+  ${TATTOO_LAYER_GLSL}
+
   uniform sampler2D skinTexture;
   uniform sampler2D tattooTexture;
   uniform vec2 tattooCenter;
@@ -47,25 +58,14 @@ const fragmentShader = `
       }
     }
 
-    vec2 offset = vUv - tattooCenter;
-    float c = cos(tattooRotation);
-    float s = sin(tattooRotation);
-    offset = vec2(c * offset.x + s * offset.y, -s * offset.x + c * offset.y);
-    vec2 tattooUV = offset / tattooScale + 0.5;
-
-    if (tattooVisible > 0.5 &&
-        tattooUV.x >= 0.0 && tattooUV.x <= 1.0 &&
-        tattooUV.y >= 0.0 && tattooUV.y <= 1.0) {
-      vec4 tattoo = texture2D(tattooTexture, tattooUV);
-      tattoo.rgb *= 0.85;
-      float edgeFade = 1.0;
-      float fadeWidth = 0.04;
-      edgeFade *= smoothstep(0.0, fadeWidth, tattooUV.x);
-      edgeFade *= smoothstep(0.0, fadeWidth, 1.0 - tattooUV.x);
-      edgeFade *= smoothstep(0.0, fadeWidth, tattooUV.y);
-      edgeFade *= smoothstep(0.0, fadeWidth, 1.0 - tattooUV.y);
-      float alpha = tattoo.a * edgeFade;
-      skin.rgb = mix(skin.rgb, tattoo.rgb * light, alpha);
+    if (tattooVisible > 0.5) {
+      vec4 tattooLayer = sampleTattooLayer(
+        tattooTexture, vUv, tattooCenter, tattooScale, tattooRotation
+      );
+      if (tattooLayer.a > 0.0) {
+        vec3 tattooRgb = tattooLayer.rgb * 0.85;
+        skin.rgb = mix(skin.rgb, tattooRgb * light, tattooLayer.a);
+      }
     }
 
     gl_FragColor = skin;
@@ -115,6 +115,17 @@ function createSkinTexture(): THREE.CanvasTexture {
 
 type ModelType = 'Monk' | 'FinalBaseMesh';
 
+export interface UVTattooPlacementSnapshot {
+  center: [number, number];
+  scaleUV: number;
+  rotationRad: number;
+  hasPlaced: boolean;
+}
+
+export interface ModelWithUVTattooHandle {
+  getPlacement: () => UVTattooPlacementSnapshot;
+}
+
 interface ModelWithUVTattooProps {
   uploadedImage: string | null;
   model: ModelType;
@@ -126,208 +137,224 @@ interface ModelWithUVTattooProps {
   showSafeZone?: boolean;
 }
 
-export default function ModelWithUVTattoo({
-  uploadedImage,
-  model,
-  decalRotation,
-  decalScale,
-  setDecalVisible,
-  showSafeZone = true,
-}: ModelWithUVTattooProps) {
-  const { camera, scene, gl } = useThree();
-  const [cloneGroup, setCloneGroup] = useState<THREE.Object3D | null>(null);
-  const meshRef = useRef<THREE.Mesh | null>(null);
-  const tattooCenter = useRef(new THREE.Vector2(0.5, 0.5));
-  const [hasPlaced, setHasPlaced] = useState(false);
-  const hasPlacedRef = useRef(false);
-  const isDragging = useRef(false);
+const ModelWithUVTattoo = forwardRef<ModelWithUVTattooHandle, ModelWithUVTattooProps>(
+  function ModelWithUVTattoo(
+    {
+      uploadedImage,
+      model,
+      decalRotation,
+      decalScale,
+      setDecalVisible,
+      showSafeZone = true,
+    },
+    ref
+  ) {
+    const { camera, scene, gl } = useThree();
+    const [cloneGroup, setCloneGroup] = useState<THREE.Object3D | null>(null);
+    const meshRef = useRef<THREE.Mesh | null>(null);
+    const tattooCenter = useRef(new THREE.Vector2(0.5, 0.5));
+    const [hasPlaced, setHasPlaced] = useState(false);
+    const hasPlacedRef = useRef(false);
+    const isDragging = useRef(false);
 
-  useEffect(() => {
-    hasPlacedRef.current = hasPlaced;
-  }, [hasPlaced]);
+    useEffect(() => {
+      hasPlacedRef.current = hasPlaced;
+    }, [hasPlaced]);
 
-  const logoTexture = useLoader(TextureLoader, '/logo.png');
-  const monkGltf = useLoader(GLTFLoader, '/monk.glb');
-  const baseObj = useLoader(OBJLoader, '/FinalBaseMesh.obj');
+    const logoTexture = useLoader(TextureLoader, '/logo.png');
+    const monkGltf = useLoader(GLTFLoader, '/monk.glb');
+    const baseObj = useLoader(OBJLoader, '/FinalBaseMesh.obj');
 
-  const skinTexture = useMemo(() => createSkinTexture(), []);
-  const tattooTexture = useMemo(() => {
-    if (uploadedImage) {
-      const tex = new THREE.Texture();
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.src = uploadedImage;
-      img.onload = () => {
-        tex.image = img;
-        tex.needsUpdate = true;
-      };
-      return tex;
-    }
-    return logoTexture;
-  }, [uploadedImage, logoTexture]);
+    const skinTexture = useMemo(() => createSkinTexture(), []);
+    const tattooTexture = useMemo(() => {
+      if (uploadedImage) {
+        const tex = new THREE.Texture();
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.src = uploadedImage;
+        img.onload = () => {
+          tex.image = img;
+          tex.needsUpdate = true;
+        };
+        return tex;
+      }
+      return logoTexture;
+    }, [uploadedImage, logoTexture]);
 
-  const shaderMaterial = useMemo(
-    () =>
-      new THREE.ShaderMaterial({
-        vertexShader,
-        fragmentShader,
-        uniforms: {
-          skinTexture: { value: skinTexture },
-          tattooTexture: { value: tattooTexture },
-          tattooCenter: { value: new THREE.Vector2(0.5, 0.5) },
-          tattooScale: { value: 0.12 },
-          tattooRotation: { value: 0 },
-          tattooVisible: { value: 0.0 },
-          showSafeZone: { value: 1.0 },
-          safeZoneBounds: {
-            value: new THREE.Vector4(
-              SAFE_ZONE.uMin,
-              SAFE_ZONE.uMax,
-              SAFE_ZONE.vMin,
-              SAFE_ZONE.vMax
-            ),
+    const shaderMaterial = useMemo(
+      () =>
+        new THREE.ShaderMaterial({
+          vertexShader,
+          fragmentShader,
+          uniforms: {
+            skinTexture: { value: skinTexture },
+            tattooTexture: { value: tattooTexture },
+            tattooCenter: { value: new THREE.Vector2(0.5, 0.5) },
+            tattooScale: { value: 0.12 },
+            tattooRotation: { value: 0 },
+            tattooVisible: { value: 0.0 },
+            showSafeZone: { value: 1.0 },
+            safeZoneBounds: {
+              value: new THREE.Vector4(
+                SAFE_ZONE.uMin,
+                SAFE_ZONE.uMax,
+                SAFE_ZONE.vMin,
+                SAFE_ZONE.vMax
+              ),
+            },
           },
-        },
-        side: THREE.DoubleSide,
+          side: THREE.DoubleSide,
+        }),
+      [skinTexture, tattooTexture]
+    );
+
+    const scaleInUV = useMemo(() => Math.max(0.01, decalScale) * 0.12, [decalScale]);
+
+    useImperativeHandle(
+      ref,
+      () => ({
+        getPlacement: (): UVTattooPlacementSnapshot => ({
+          center: [tattooCenter.current.x, tattooCenter.current.y],
+          scaleUV: scaleInUV,
+          rotationRad: THREE.MathUtils.degToRad(decalRotation),
+          hasPlaced: hasPlacedRef.current,
+        }),
       }),
-    [skinTexture, tattooTexture]
-  );
+      [scaleInUV, decalRotation]
+    );
 
-  const scaleInUV = useMemo(
-    () => Math.max(0.01, decalScale) * 0.12,
-    [decalScale]
-  );
-
-  useFrame(() => {
-    shaderMaterial.uniforms.tattooCenter.value.copy(tattooCenter.current);
-    shaderMaterial.uniforms.tattooScale.value = scaleInUV;
-    shaderMaterial.uniforms.tattooRotation.value =
-      THREE.MathUtils.degToRad(decalRotation);
-    shaderMaterial.uniforms.tattooVisible.value = hasPlacedRef.current ? 1.0 : 0.0;
-    shaderMaterial.uniforms.showSafeZone.value = showSafeZone ? 1.0 : 0.0;
-  });
-
-  useEffect(() => {
-    let modelGroup: THREE.Object3D;
-    if (model === 'Monk') {
-      modelGroup = monkGltf.scene;
-    } else {
-      modelGroup = baseObj;
-    }
-    const group = modelGroup.clone();
-    const box = new THREE.Box3().setFromObject(group);
-    const center = new THREE.Vector3();
-    box.getCenter(center);
-    group.position.sub(center);
-
-    let targetMesh: THREE.Mesh | null = null;
-    group.traverse((child) => {
-      const m = child as THREE.Mesh;
-      if (m.isMesh && !targetMesh) targetMesh = m;
+    useFrame(() => {
+      shaderMaterial.uniforms.tattooCenter.value.copy(tattooCenter.current);
+      shaderMaterial.uniforms.tattooScale.value = scaleInUV;
+      shaderMaterial.uniforms.tattooRotation.value = THREE.MathUtils.degToRad(decalRotation);
+      shaderMaterial.uniforms.tattooVisible.value = hasPlacedRef.current ? 1.0 : 0.0;
+      shaderMaterial.uniforms.showSafeZone.value = showSafeZone ? 1.0 : 0.0;
     });
-    if (targetMesh) {
-      const geo = (targetMesh.geometry as THREE.BufferGeometry).clone();
-      ensureUVs(geo);
-      targetMesh.geometry = geo;
-      targetMesh.material = shaderMaterial;
-      meshRef.current = targetMesh;
-      setCloneGroup(group);
-    } else {
-      setCloneGroup(null);
-    }
-  }, [model, monkGltf, baseObj, shaderMaterial]);
 
-  useEffect(() => {
-    setDecalVisible(hasPlaced);
-  }, [hasPlaced, setDecalVisible]);
-
-  const raycaster = useRef(new THREE.Raycaster());
-  const mouse = useRef(new THREE.Vector2());
-
-  const getUVFromEvent = useCallback(
-    (event: PointerEvent) => {
-      const rect = gl.domElement.getBoundingClientRect();
-      mouse.current.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-      mouse.current.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-      raycaster.current.setFromCamera(mouse.current, camera);
-      const m = meshRef.current;
-      if (!m) return null;
-      const hits = raycaster.current.intersectObject(m);
-      if (hits.length > 0 && hits[0].uv) return hits[0].uv.clone();
-      return null;
-    },
-    [camera, gl]
-  );
-
-  const clampToSafeZone = useCallback((uv: THREE.Vector2, scale: number) => {
-    const half = scale * 0.5;
-    uv.x = Math.max(SAFE_ZONE.uMin + half, Math.min(SAFE_ZONE.uMax - half, uv.x));
-    uv.y = Math.max(SAFE_ZONE.vMin + half, Math.min(SAFE_ZONE.vMax - half, uv.y));
-    return uv;
-  }, []);
-
-  const setOrbitEnabled = useCallback(
-    (enabled: boolean) => {
-      const controls = (scene as THREE.Scene & { orbitControls?: { enabled: boolean } })
-        .orbitControls;
-      if (controls) controls.enabled = enabled;
-    },
-    [scene]
-  );
-
-  const onPointerDown = useCallback(
-    (e: PointerEvent) => {
-      const uv = getUVFromEvent(e);
-      if (!uv) return;
-      clampToSafeZone(uv, scaleInUV);
-
-      if (e.metaKey) {
-        if (!hasPlacedRef.current) return;
-        isDragging.current = true;
-        setOrbitEnabled(false);
-        tattooCenter.current.copy(uv);
-        return;
+    useEffect(() => {
+      let modelGroup: THREE.Object3D;
+      if (model === 'Monk') {
+        modelGroup = monkGltf.scene;
+      } else {
+        modelGroup = baseObj;
       }
+      const group = modelGroup.clone();
+      const box = new THREE.Box3().setFromObject(group);
+      const center = new THREE.Vector3();
+      box.getCenter(center);
+      group.position.sub(center);
 
-      setHasPlaced(true);
-      hasPlacedRef.current = true;
-      tattooCenter.current.copy(uv);
-      isDragging.current = false;
-    },
-    [getUVFromEvent, scaleInUV, clampToSafeZone, setOrbitEnabled]
-  );
+      let targetMesh: THREE.Mesh | null = null;
+      group.traverse((child) => {
+        const m = child as THREE.Mesh;
+        if (m.isMesh && !targetMesh) targetMesh = m;
+      });
+      if (targetMesh) {
+        const geo = (targetMesh.geometry as THREE.BufferGeometry).clone();
+        ensureUVs(geo);
+        targetMesh.geometry = geo;
+        targetMesh.material = shaderMaterial;
+        meshRef.current = targetMesh;
+        setCloneGroup(group);
+      } else {
+        setCloneGroup(null);
+      }
+    }, [model, monkGltf, baseObj, shaderMaterial]);
 
-  const onPointerMove = useCallback(
-    (e: PointerEvent) => {
-      if (!isDragging.current) return;
-      const uv = getUVFromEvent(e);
-      if (uv) {
+    useEffect(() => {
+      setDecalVisible(hasPlaced);
+    }, [hasPlaced, setDecalVisible]);
+
+    const raycaster = useRef(new THREE.Raycaster());
+    const mouse = useRef(new THREE.Vector2());
+
+    const getUVFromEvent = useCallback(
+      (event: PointerEvent) => {
+        const rect = gl.domElement.getBoundingClientRect();
+        mouse.current.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        mouse.current.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+        raycaster.current.setFromCamera(mouse.current, camera);
+        const m = meshRef.current;
+        if (!m) return null;
+        const hits = raycaster.current.intersectObject(m);
+        if (hits.length > 0 && hits[0].uv) return hits[0].uv.clone();
+        return null;
+      },
+      [camera, gl]
+    );
+
+    const clampToSafeZone = useCallback((uv: THREE.Vector2, scale: number) => {
+      const half = scale * 0.5;
+      uv.x = Math.max(SAFE_ZONE.uMin + half, Math.min(SAFE_ZONE.uMax - half, uv.x));
+      uv.y = Math.max(SAFE_ZONE.vMin + half, Math.min(SAFE_ZONE.vMax - half, uv.y));
+      return uv;
+    }, []);
+
+    const setOrbitEnabled = useCallback(
+      (enabled: boolean) => {
+        const controls = (scene as THREE.Scene & { orbitControls?: { enabled: boolean } })
+          .orbitControls;
+        if (controls) controls.enabled = enabled;
+      },
+      [scene]
+    );
+
+    const onPointerDown = useCallback(
+      (e: PointerEvent) => {
+        const uv = getUVFromEvent(e);
+        if (!uv) return;
         clampToSafeZone(uv, scaleInUV);
+
+        if (e.metaKey) {
+          if (!hasPlacedRef.current) return;
+          isDragging.current = true;
+          setOrbitEnabled(false);
+          tattooCenter.current.copy(uv);
+          return;
+        }
+
+        setHasPlaced(true);
+        hasPlacedRef.current = true;
         tattooCenter.current.copy(uv);
+        isDragging.current = false;
+      },
+      [getUVFromEvent, scaleInUV, clampToSafeZone, setOrbitEnabled]
+    );
+
+    const onPointerMove = useCallback(
+      (e: PointerEvent) => {
+        if (!isDragging.current) return;
+        const uv = getUVFromEvent(e);
+        if (uv) {
+          clampToSafeZone(uv, scaleInUV);
+          tattooCenter.current.copy(uv);
+        }
+      },
+      [getUVFromEvent, scaleInUV, clampToSafeZone]
+    );
+
+    const onPointerUp = useCallback(() => {
+      if (isDragging.current) {
+        isDragging.current = false;
+        setOrbitEnabled(true);
       }
-    },
-    [getUVFromEvent, scaleInUV, clampToSafeZone]
-  );
+    }, [setOrbitEnabled]);
 
-  const onPointerUp = useCallback(() => {
-    if (isDragging.current) {
-      isDragging.current = false;
-      setOrbitEnabled(true);
-    }
-  }, [setOrbitEnabled]);
+    useEffect(() => {
+      const el = gl.domElement;
+      el.addEventListener('pointerdown', onPointerDown);
+      window.addEventListener('pointermove', onPointerMove);
+      window.addEventListener('pointerup', onPointerUp);
+      return () => {
+        el.removeEventListener('pointerdown', onPointerDown);
+        window.removeEventListener('pointermove', onPointerMove);
+        window.removeEventListener('pointerup', onPointerUp);
+      };
+    }, [onPointerDown, onPointerMove, onPointerUp, gl]);
 
-  useEffect(() => {
-    const el = gl.domElement;
-    el.addEventListener('pointerdown', onPointerDown);
-    window.addEventListener('pointermove', onPointerMove);
-    window.addEventListener('pointerup', onPointerUp);
-    return () => {
-      el.removeEventListener('pointerdown', onPointerDown);
-      window.removeEventListener('pointermove', onPointerMove);
-      window.removeEventListener('pointerup', onPointerUp);
-    };
-  }, [onPointerDown, onPointerMove, onPointerUp, gl]);
+    if (!cloneGroup) return null;
+    return <primitive object={cloneGroup} />;
+  }
+);
 
-  if (!cloneGroup) return null;
-  return <primitive object={cloneGroup} />;
-}
+export default ModelWithUVTattoo;
