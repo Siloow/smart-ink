@@ -1,7 +1,19 @@
 import { validateContract } from '../render/buildContract';
 import type { RenderContract } from '../render/contract';
 
-const RENDER_URL = 'https://smart-ink-render-615593848551.europe-west4.run.app';
+const RENDER_URL =
+  import.meta.env.VITE_RENDER_URL ??
+  'https://smart-ink-render-615593848551.europe-west4.run.app';
+
+export function getRenderUrl(): string {
+  return RENDER_URL;
+}
+
+export function getRenderTargetLabel(): 'local' | 'cloud' {
+  const url = RENDER_URL.toLowerCase();
+  if (url.includes('localhost') || url.includes('127.0.0.1')) return 'local';
+  return 'cloud';
+}
 
 export type RenderStatus = 'idle' | 'uploading' | 'rendering' | 'done' | 'error';
 

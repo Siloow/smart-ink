@@ -93,7 +93,11 @@ DEFAULT_AREA_SIZE = (2.0, 2.0)
 # Tattoo pipeline
 # ---------------------------------------------------------------------------
 
-def run_tattoo_import(scene_data: Dict[str, Any], json_file_path: Optional[str] = None) -> None:
+def run_tattoo_import(
+    scene_data: Dict[str, Any],
+    json_file_path: Optional[str] = None,
+    preview: bool = False,
+) -> None:
     """Load tattoo-format JSON: body mesh, decals (shrinkwrap), camera, lights, then render."""
     clear_scene()
     json_dir = os.path.dirname(os.path.abspath(json_file_path)) if json_file_path else None
@@ -107,7 +111,7 @@ def run_tattoo_import(scene_data: Dict[str, Any], json_file_path: Optional[str] 
     setup_camera_tattoo(scene_data.get('camera', {}))
     setup_background(scene_data.get('background') or {})
     setup_lights_tattoo(scene_data.get('lighting', {}))
-    setup_render_tattoo(scene_data.get('renderSettings', {}), scene_data.get('camera', {}))
+    setup_render_tattoo(scene_data.get('renderSettings', {}), scene_data.get('camera', {}), preview=preview)
     output_path = (scene_data.get('renderSettings') or {}).get('outputPath', '/tmp/render_output.png')
     ensure_output_dir(output_path)
     bpy.context.scene.render.filepath = output_path
@@ -456,13 +460,21 @@ def setup_lights_tattoo(light_data: Dict[str, Any]) -> None:
             light_obj.rotation_euler = rot_quat.to_euler()
 
 
-def setup_render_tattoo(settings: Dict[str, Any], camera_data: Optional[Dict[str, Any]] = None) -> None:
+def setup_render_tattoo(
+    settings: Dict[str, Any],
+    camera_data: Optional[Dict[str, Any]] = None,
+    preview: bool = False,
+) -> None:
     """Apply render settings with aspect ratio from camera export."""
     scene = bpy.context.scene
     scene.render.engine = 'CYCLES'
     scene.cycles.device = 'GPU'
-    scene.cycles.samples = settings.get('samples', 256)
-    scene.cycles.use_denoising = True
+    if preview:
+        scene.cycles.samples = 24
+        scene.cycles.use_denoising = True
+    else:
+        scene.cycles.samples = settings.get('samples', 256)
+        scene.cycles.use_denoising = True
 
     res = settings.get('resolution', [2048, 2048])
     aspect = 1.0
@@ -471,12 +483,20 @@ def setup_render_tattoo(settings: Dict[str, Any], camera_data: Optional[Dict[str
     if aspect <= 0:
         aspect = 1.0
 
+    base_w, base_h = int(res[0]), int(res[1])
+    if preview:
+        if aspect >= 1.0:
+            base_w, base_h = 512, max(1, int(512 / aspect))
+        else:
+            base_h = 512
+            base_w = max(1, int(512 * aspect))
+
     if aspect >= 1.0:
-        scene.render.resolution_x = int(res[0])
-        scene.render.resolution_y = max(1, int(res[0] / aspect))
+        scene.render.resolution_x = base_w
+        scene.render.resolution_y = max(1, int(base_w / aspect))
     else:
-        scene.render.resolution_y = int(res[1])
-        scene.render.resolution_x = max(1, int(res[1] * aspect))
+        scene.render.resolution_y = base_h
+        scene.render.resolution_x = max(1, int(base_h * aspect))
 
     scene.render.resolution_percentage = 100
 
@@ -487,11 +507,25 @@ def ensure_output_dir(filepath: str) -> None:
         os.makedirs(d, exist_ok=True)
 
 
+def _parse_script_args() -> Tuple[str, bool]:
+    """Parse args after Blender's '--' separator."""
+    if '--' in sys.argv:
+        argv = sys.argv[sys.argv.index('--') + 1:]
+    else:
+        argv = [a for a in sys.argv[1:] if not a.endswith('.py') and not a.endswith('sceneImporter.py')]
+    preview = '--preview' in argv
+    json_args = [a for a in argv if a != '--preview']
+    if not json_args:
+        raise ValueError("Missing scene export JSON path")
+    return json_args[0], preview
+
+
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: blender --background --python sceneImporter.py -- <scene_export.json>")
+    try:
+        json_file, preview = _parse_script_args()
+    except ValueError:
+        print("Usage: blender --background --python sceneImporter.py -- <scene_export.json> [--preview]")
         return
-    json_file = sys.argv[-1]
     if not os.path.exists(json_file):
         print(f"Error: Scene export file not found: {json_file}")
         return
@@ -499,8 +533,9 @@ def main():
         with open(json_file, 'r') as f:
             scene_data = json.load(f)
         if is_tattoo_format(scene_data):
-            print("Detected tattoo scene format. Running tattoo pipeline...")
-            run_tattoo_import(scene_data, json_file)
+            mode = 'preview' if preview else 'full'
+            print(f"Detected tattoo scene format. Running tattoo pipeline ({mode})...")
+            run_tattoo_import(scene_data, json_file, preview=preview)
         else:
             print("This script supports only tattoo scene format (bodyMesh, decals, camera, lighting).")
     except Exception as e:

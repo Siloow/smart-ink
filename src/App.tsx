@@ -10,7 +10,6 @@ import ScenesDashboard from './ScenesDashboard'
 import LandingPage from './LandingPage'
 import LoginPage from './LoginPage'
 import EditorLeftPanel from './EditorLeftPanel'
-import BusinessToolsPanel from './components/business-tools/BusinessToolsPanel'
 import type { SceneData } from './types'
 import { updateScene } from './sceneStorage'
 import {
@@ -21,7 +20,13 @@ import {
   type ExportForBlenderParams,
 } from './utils/sceneExporter'
 import type { LightingPresetKey } from './config/lightingPresets'
-import { cloudRender, renderContract, type RenderStatus } from './services/cloudRenderService'
+import {
+  cloudRender,
+  renderContract,
+  checkRenderServer,
+  getRenderTargetLabel,
+  type RenderStatus,
+} from './services/cloudRenderService'
 import { bakeInkLayer } from './render/bakeInkLayer'
 import { buildRenderContract } from './render/buildContract'
 import { REGISTRY, findById } from './render/registry'
@@ -103,8 +108,6 @@ function App() {
   const [showLandingPage, setShowLandingPage] = useState(true)
   const [showLoginPage, setShowLoginPage] = useState(false)
   const [showDashboard, setShowDashboard] = useState(false)
-  const [editorMode, setEditorMode] = useState<'creative' | 'business'>('creative')
-
   // Editor state (mirrors SceneData)
   const [uploadedImage, setUploadedImage] = useState<string | null>(null)
   const [model, setModel] = useState<'Monk' | 'FinalBaseMesh'>('FinalBaseMesh')
@@ -121,7 +124,7 @@ function App() {
   const [decalNormal, setDecalNormal] = useState<[number, number, number] | null>(null)
   const [cameraState, setCameraState] = useState<{ position: [number, number, number], target: [number, number, number], fov: number }>(CAMERA_PRESETS.threeQuarter)
   const [performanceMode, setPerformanceMode] = useState(false)
-  const [uvTattooMode, setUvTattooMode] = useState(false)
+  const [uvTattooMode, setUvTattooMode] = useState(true)
   const [bodyMeshId, setBodyMeshId] = useState('body_full')
   const [skinToneId, setSkinToneId] = useState('tone_03')
   const [poseId, setPoseId] = useState('neutral')
@@ -154,8 +157,20 @@ function App() {
   const [cloudRenderStatus, setCloudRenderStatus] = useState<RenderStatus>('idle')
   const [cloudRenderMessage, setCloudRenderMessage] = useState('')
   const [cloudRenderImage, setCloudRenderImage] = useState<string | null>(null)
+  const [renderServerOnline, setRenderServerOnline] = useState<boolean | null>(null)
 
   const canvasContainerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!showExportModal) return
+    let cancelled = false
+    void checkRenderServer().then((ok) => {
+      if (!cancelled) setRenderServerOnline(ok)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [showExportModal])
 
   // Callback for renderer ready
   const handleRendererReady = useCallback((renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera) => {
@@ -206,8 +221,7 @@ function App() {
     [model, buildBlenderDecals, cameraState, threeRenderer, lightingPreset, background]
   )
 
-  // Load scene into editor state (optional: open in business mode when coming from dashboard "Business")
-  const loadScene = (scene: SceneData, initialMode?: 'creative' | 'business') => {
+  const loadScene = (scene: SceneData) => {
     const migrated = migrateScene(scene)
     setCurrentScene(migrated)
     setUploadedImage(migrated.decalImage)
@@ -234,7 +248,6 @@ function App() {
     }
     setShowDashboard(false)
     setCameraState(migrated.camera ?? CAMERA_PRESETS.threeQuarter)
-    if (initialMode) setEditorMode(initialMode)
   }
 
   // Save editor state to current scene (except thumbnail)
@@ -312,32 +325,6 @@ function App() {
   const handleCameraPresetChange = (preset: CameraPresetKey) => {
     setCameraPreset(preset)
     setCameraState(CAMERA_PRESETS[preset])
-  }
-
-  // When business tools update the scene (status, tags, etc.), persist and sync editor state
-  const handleBusinessSceneUpdate = (updated: SceneData) => {
-    // Important: business tool actions (like version restore) must update the editor's
-    // internal state variables, not just `currentScene`, otherwise the UI won't change.
-    setUploadedImage(updated.decalImage)
-    setModel(updated.model)
-    setDecalRotation(updated.decalRotation)
-    setDecalScale(updated.decalScale)
-    setDecalColor(updated.decalColor ?? '#ffffff')
-    setDecalOpacity(updated.decalOpacity)
-    setDecalVisible(updated.decalVisible)
-    setDecalPosition(updated.decalPosition ?? null)
-    setDecalNormal(updated.decalNormal ?? null)
-    setBackground(updated.background as BgKey)
-    setLightingPreset(updated.lightingPreset as LightingPresetKey)
-    setCameraState(updated.camera ?? CAMERA_PRESETS.threeQuarter)
-    const migrated = migrateScene(updated)
-    setBodyMeshId(migrated.bodyMeshId!)
-    setSkinToneId(migrated.skinToneId!)
-    setPoseId(migrated.poseId!)
-    setLookId(migrated.lookId!)
-    setQualityTier(migrated.qualityTier!)
-
-    void updateScene(migrated).then(() => setCurrentScene(migrated))
   }
 
   // Export functionality using Three.js renderer
@@ -625,22 +612,6 @@ function App() {
           <span className="editor-toolbar-spacer" />
         </div>
         <div className="editor-toolbar-actions editor-toolbar-actions--spread">
-          <div className="editor-mode-switch" role="group" aria-label="Editor mode">
-            <button
-              type="button"
-              className={`editor-mode-btn ${editorMode === 'creative' ? 'editor-mode-btn--active' : ''}`}
-              onClick={() => setEditorMode('creative')}
-            >
-              Creative
-            </button>
-            <button
-              type="button"
-              className={`editor-mode-btn ${editorMode === 'business' ? 'editor-mode-btn--active' : ''}`}
-              onClick={() => setEditorMode('business')}
-            >
-              Business
-            </button>
-          </div>
           <button
             type="button"
             className={`tool-btn-nav ${uvTattooMode ? 'tool-btn-nav--green-active' : 'tool-btn-nav--blue'}`}
@@ -742,49 +713,36 @@ function App() {
           </div>
         </div>
 
-        {editorMode === 'creative' ? (
-          <TopMenuBar
-            setUploadedImage={setUploadedImage}
-            uploadedImage={uploadedImage}
-            onModelSelect={(m) => setModel(m as 'Monk' | 'FinalBaseMesh')}
-            currentModel={model}
-            decalVisible={decalVisible}
-            decalRotation={decalRotation}
-            decalScale={decalScale}
-            decalColor={decalColor}
-            decalOpacity={decalOpacity}
-            onDecalRotationChange={setDecalRotation}
-            onDecalScaleChange={setDecalScale}
-            onDecalColorChange={setDecalColor}
-            onDecalOpacityChange={setDecalOpacity}
-            onDecalVisibleChange={setDecalVisible}
-            onDecalReset={handleResetDecal}
-            photoMode={photoMode}
-            setPhotoMode={setPhotoMode}
-            background={background}
-            setBackground={(bg) => setBackground(bg as BgKey)}
-            lightingPreset={lightingPreset}
-            setLightingPreset={(preset) => setLightingPreset(preset as LightingPresetKey)}
-            LIGHTING_PRESETS={LIGHTING_PRESET_LABELS}
-            cameraPreset={cameraPreset}
-            onCameraPresetChange={(preset) => handleCameraPresetChange(preset as CameraPresetKey)}
-            CAMERA_PRESETS={CAMERA_PRESETS}
-            performanceMode={performanceMode}
-            setPerformanceMode={setPerformanceMode}
-            onExport={() => setShowExportModal(true)}
-          />
-        ) : (
-          <div className="editor-right-panel editor-right-panel--business">
-            <BusinessToolsPanel
-              currentScene={currentScene}
-              onSceneUpdate={handleBusinessSceneUpdate}
-              onExportScene={exportImage}
-              isVisible={true}
-              onClose={() => setEditorMode('creative')}
-              embedded
-            />
-          </div>
-        )}
+        <TopMenuBar
+          setUploadedImage={setUploadedImage}
+          uploadedImage={uploadedImage}
+          onModelSelect={(m) => setModel(m as 'Monk' | 'FinalBaseMesh')}
+          currentModel={model}
+          decalVisible={decalVisible}
+          decalRotation={decalRotation}
+          decalScale={decalScale}
+          decalColor={decalColor}
+          decalOpacity={decalOpacity}
+          onDecalRotationChange={setDecalRotation}
+          onDecalScaleChange={setDecalScale}
+          onDecalColorChange={setDecalColor}
+          onDecalOpacityChange={setDecalOpacity}
+          onDecalVisibleChange={setDecalVisible}
+          onDecalReset={handleResetDecal}
+          photoMode={photoMode}
+          setPhotoMode={setPhotoMode}
+          background={background}
+          setBackground={(bg) => setBackground(bg as BgKey)}
+          lightingPreset={lightingPreset}
+          setLightingPreset={(preset) => setLightingPreset(preset as LightingPresetKey)}
+          LIGHTING_PRESETS={LIGHTING_PRESET_LABELS}
+          cameraPreset={cameraPreset}
+          onCameraPresetChange={(preset) => handleCameraPresetChange(preset as CameraPresetKey)}
+          CAMERA_PRESETS={CAMERA_PRESETS}
+          performanceMode={performanceMode}
+          setPerformanceMode={setPerformanceMode}
+          onExport={() => setShowExportModal(true)}
+        />
       </div>
 
       {/* Export Modal */}
@@ -872,8 +830,23 @@ function App() {
             <div className="modal-blender-divider" />
             <h3 className="modal-blender-title">Cloud Render (Cycles)</h3>
             <p className="modal-blender-desc">
-              Render this scene on a cloud GPU with Blender Cycles. Returns a photorealistic image in 15-60 seconds.
+              Render this scene with Blender Cycles ({getRenderTargetLabel()} server). Returns a photorealistic image in 15-60 seconds.
             </p>
+            {renderServerOnline !== null && (
+              <p style={{ fontSize: '13px', marginBottom: '8px' }}>
+                <span
+                  style={{
+                    display: 'inline-block',
+                    width: 8,
+                    height: 8,
+                    borderRadius: '50%',
+                    marginRight: 6,
+                    background: renderServerOnline ? '#22c55e' : '#ef4444',
+                  }}
+                />
+                Render server: {getRenderTargetLabel()} — {renderServerOnline ? 'online' : 'offline'}
+              </p>
+            )}
             <div className="modal-blender-actions">
               <button
                 type="button"
