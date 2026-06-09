@@ -1580,7 +1580,7 @@ body {
   width: 100vw;
   height: 100vh;
   overflow: hidden;
-  background: #1a1a1e;
+  background: var(--bg-primary);
 }
 
 .editor-toolbar--main {
@@ -1679,13 +1679,14 @@ body {
 }
 
 .tool-btn--ghost {
-  background: transparent;
-  border: 1px solid var(--border-color);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   color: var(--text-secondary);
 }
 
 .tool-btn--ghost:hover {
-  border-color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.18);
   color: var(--text-primary);
 }
 
@@ -1697,13 +1698,29 @@ body {
 }
 
 .editor-left-panel {
-  width: 210px;
-  flex-shrink: 0;
-  background: var(--bg-sidebar);
-  border-right: 1px solid var(--border-subtle);
+  width: 220px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  border-right: 1px solid var(--border-subtle);
+}
+
+.editor-left-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-top: 12px;
+}
+
+.editor-left-scene-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.editor-left-scene-tree .editor-search {
+  margin: 6px 0 0;
+  width: 100%;
 }
 
 .editor-tabs {
@@ -1716,14 +1733,15 @@ body {
   flex: 1;
   padding: 10px;
   text-align: center;
-  font-size: 0.82rem;
+  font-size: 12px;
   font-weight: 500;
   color: var(--text-muted);
   cursor: pointer;
   background: transparent;
   border: none;
+  border-bottom: 2px solid transparent;
   font-family: var(--font);
-  transition: color 0.15s, background 0.15s;
+  transition: color 0.15s, border-color 0.15s;
 }
 
 .editor-tab:hover {
@@ -1732,39 +1750,23 @@ body {
 
 .editor-tab.active {
   color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.04);
-}
-
-.editor-left-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 14px 6px;
-  font-size: 0.78rem;
-  color: var(--text-muted);
-}
-
-.editor-left-plus {
-  cursor: pointer;
-  font-size: 0.9rem;
-}
-
-.editor-left-plus:hover {
-  color: var(--text-primary);
+  border-bottom-color: var(--accent-blue);
 }
 
 .scene-item {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 14px;
-  font-size: 0.82rem;
+  padding: 7px 10px;
+  font-size: 12px;
   color: var(--text-secondary);
   cursor: default;
+  border-radius: var(--radius-md);
 }
 
 .scene-item.active {
   color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .scene-check {
@@ -1773,7 +1775,7 @@ body {
 }
 
 .scene-item.child {
-  padding-left: 14px;
+  padding-left: 10px;
 }
 
 .scene-tree-prefix {
@@ -1786,17 +1788,21 @@ body {
 }
 
 .editor-search {
-  margin: 10px 12px;
-  background: var(--bg-input);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  padding: 7px 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 8px 10px;
   color: var(--text-primary);
   font-family: var(--font);
-  font-size: 0.8rem;
+  font-size: 12px;
   outline: none;
-  width: calc(100% - 24px);
   box-sizing: border-box;
+  transition: border-color 0.15s;
+}
+
+.editor-search:focus {
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 1px var(--accent-blue);
 }
 
 .editor-search::placeholder {
@@ -1861,139 +1867,8 @@ body {
 
 /* ——— Right inspector panel ——— */
 .editor-right-panel {
-  width: 280px;
-  flex-shrink: 0;
-  background: var(--bg-sidebar);
+  width: 300px;
   border-left: 1px solid var(--border-subtle);
-  padding: 12px 16px 24px;
-  overflow-y: auto;
-  overflow-x: hidden;
-}
-
-.editor-right-panel-header {
-  padding-bottom: 12px;
-  margin-bottom: 8px;
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.editor-right-panel-title {
-  font-size: 0.88rem;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.editor-right-panel .panel-section {
-  margin-bottom: 20px;
-  padding-bottom: 4px;
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.editor-right-panel .panel-section--last {
-  border-bottom: none;
-}
-
-.editor-panel-preview {
-  margin-top: 12px;
-  padding: 10px;
-  background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  text-align: center;
-}
-
-.editor-panel-preview img {
-  max-width: 100%;
-  max-height: 100px;
-  object-fit: contain;
-  display: inline-block;
-}
-
-.editor-panel-icon-btn:hover {
-  background: rgba(255, 255, 255, 0.06) !important;
-  color: var(--text-primary) !important;
-}
-
-.editor-panel-pill {
-  flex: 1;
-  padding: 6px 8px;
-  font-size: 0.72rem;
-  background: var(--bg-input);
-  border: 1px solid var(--border-color);
-  color: var(--text-secondary);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  font-family: var(--font);
-}
-
-.editor-panel-pill:hover {
-  color: var(--text-primary);
-}
-
-.editor-panel-num {
-  width: 52px;
-  padding: 4px 6px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border-color);
-  background: var(--bg-input);
-  color: var(--text-primary);
-  font-size: 0.8rem;
-  font-family: var(--font);
-}
-
-.editor-panel-reset {
-  width: 100%;
-  margin-top: 8px;
-  padding: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  background: var(--bg-input);
-  border: 1px solid var(--border-color);
-  color: var(--text-primary);
-  border-radius: var(--radius-sm);
-  font-family: var(--font);
-  font-size: 0.82rem;
-  cursor: pointer;
-}
-
-.editor-panel-reset:hover {
-  border-color: var(--text-muted);
-}
-
-.editor-panel-export-btn {
-  width: 100%;
-  padding: 12px;
-  background: linear-gradient(135deg, var(--accent-green), #00b874);
-  color: #000;
-  border: none;
-  border-radius: var(--radius-md);
-  font-family: var(--font);
-  font-size: 0.9rem;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.editor-panel-export-btn:hover {
-  filter: brightness(1.08);
-}
-
-.editor-panel-perf {
-  width: 100%;
-  padding: 10px;
-  background: var(--bg-input);
-  border: 1px solid var(--border-color);
-  color: var(--text-secondary);
-  border-radius: var(--radius-sm);
-  font-family: var(--font);
-  font-size: 0.82rem;
-  cursor: pointer;
-}
-
-.editor-panel-perf[data-on='true'] {
-  background: rgba(46, 125, 50, 0.25);
-  color: var(--accent-green);
-  border-color: var(--accent-green);
 }
 
 /* Scrollbar */

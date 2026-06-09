@@ -41,15 +41,6 @@ const BG_PRESETS = {
 
 type BgKey = keyof typeof BG_PRESETS;
 
-const LIGHTING_PRESET_LABELS: Record<LightingPresetKey, string> = {
-  studio: 'Studio (3-point)',
-  softboxLeft: 'Softbox Left',
-  softboxRight: 'Softbox Right',
-  backlight: 'Backlight',
-  dramatic: 'Dramatic',
-  sunset: 'Sunset',
-};
-
 // Camera presets for different viewing angles
 type CameraPresetKey = 'front' | 'back' | 'left' | 'right' | 'top' | 'bottom' | 'threeQuarter' | 'profile' | 'closeup' | 'wide';
 
@@ -599,7 +590,7 @@ function App() {
       <div className="editor-body-row">
         <EditorLeftPanel
           sceneName={currentScene?.name ?? 'Untitled'}
-          model={model}
+          bodyMeshId={bodyMeshId}
           onBack={() => setShowDashboard(true)}
         />
 
@@ -644,10 +635,19 @@ function App() {
         </div>
 
         <TopMenuBar
+          bodyMeshId={bodyMeshId}
+          skinToneId={skinToneId}
+          poseId={poseId}
+          lookId={lookId}
+          onBodyChange={(id) => {
+            setBodyMeshId(id)
+            setModel(previewModelForBody(id))
+          }}
+          onSkinChange={setSkinToneId}
+          onPoseChange={setPoseId}
+          onLookChange={handleLookChange}
           setUploadedImage={setUploadedImage}
           uploadedImage={uploadedImage}
-          onModelSelect={(m) => setModel(m as 'Monk' | 'FinalBaseMesh')}
-          currentModel={model}
           decalVisible={decalVisible}
           decalRotation={decalRotation}
           decalScale={decalScale}
@@ -661,23 +661,12 @@ function App() {
           onDecalReset={handleResetDecal}
           photoMode={photoMode}
           setPhotoMode={setPhotoMode}
-          background={background}
-          setBackground={(bg) => setBackground(bg as BgKey)}
-          lightingPreset={lightingPreset}
-          setLightingPreset={(preset) => setLightingPreset(preset as LightingPresetKey)}
-          LIGHTING_PRESETS={LIGHTING_PRESET_LABELS}
           cameraPreset={cameraPreset}
           onCameraPresetChange={(preset) => handleCameraPresetChange(preset as CameraPresetKey)}
           CAMERA_PRESETS={CAMERA_PRESETS}
           performanceMode={performanceMode}
           setPerformanceMode={setPerformanceMode}
           onExport={() => setShowExportModal(true)}
-          lookId={lookId}
-          onLookChange={handleLookChange}
-          LOOKS={REGISTRY.looks}
-          skinToneId={skinToneId}
-          onSkinToneChange={setSkinToneId}
-          SKIN_TONES={REGISTRY.skinTones}
         />
       </div>
 
