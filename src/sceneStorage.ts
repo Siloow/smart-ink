@@ -6,6 +6,7 @@ const STORAGE_KEY = 'scenes';
 const MODEL_TO_BODY: Record<string, string> = {
   FinalBaseMesh: 'body_full',
   Monk: 'forearm',
+  Human: 'human',
 };
 
 export function migrateScene(s: SceneData): SceneData {

@@ -26,6 +26,7 @@ import bpy
 BODY_MESH_ASSETS: Dict[str, Dict[str, str]] = {
     "body_full": {"preview": "FinalBaseMesh.obj", "blend": "body_full.blend"},
     "forearm": {"preview": "monk.glb", "blend": "forearm.blend"},
+    "human": {"preview": "human.obj", "blend": "human.blend"},
 }
 
 SKIN_TONES: Dict[str, Tuple[float, float, float]] = {
@@ -194,6 +195,24 @@ def _operator_ctx() -> Optional[Dict[str, Any]]:
     return None
 
 
+def _pick_imported_body(preferred: Tuple[str, ...] = ("Genesis9",)) -> Optional[bpy.types.Object]:
+    """When an OBJ/GLB import yields multiple objects, keep the main body mesh."""
+    selected = list(bpy.context.selected_objects)
+    if not selected:
+        return None
+    for name in preferred:
+        match = next((o for o in selected if o.name == name or o.name.startswith(name)), None)
+        if match:
+            for obj in selected:
+                if obj != match:
+                    bpy.data.objects.remove(obj, do_unlink=True)
+            return match
+    body = selected[0]
+    for obj in selected[1:]:
+        bpy.data.objects.remove(obj, do_unlink=True)
+    return body
+
+
 def load_body_mesh(body_mesh_id: str, contract_dir: str) -> Optional[bpy.types.Object]:
     assets = BODY_MESH_ASSETS.get(body_mesh_id, {})
     ctx = _operator_ctx()
@@ -228,7 +247,7 @@ def load_body_mesh(body_mesh_id: str, contract_dir: str) -> Optional[bpy.types.O
         else:
             continue
 
-        obj = bpy.context.selected_objects[0] if bpy.context.selected_objects else None
+        obj = _pick_imported_body()
         if obj:
             obj.name = "Body"
             return obj

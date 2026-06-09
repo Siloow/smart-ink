@@ -1,7 +1,7 @@
 export interface SceneData {
   id: string;
   name: string;
-  model: 'Monk' | 'FinalBaseMesh';
+  model: 'Monk' | 'FinalBaseMesh' | 'Human';
   decalImage: string | null;
   decalRotation: number;
   decalScale: number;

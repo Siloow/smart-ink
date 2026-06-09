@@ -30,7 +30,7 @@ import { addRenderHistory } from './renderHistoryStorage'
 import RenderHistoryModal from './RenderHistoryModal'
 import * as THREE from 'three'
 
-function previewModelForBody(bodyMeshId: string): 'Monk' | 'FinalBaseMesh' {
+function previewModelForBody(bodyMeshId: string) {
   return findById(REGISTRY.bodyMeshes, bodyMeshId)?.previewModel ?? 'FinalBaseMesh'
 }
 
@@ -89,7 +89,7 @@ function App() {
   const [showDashboard, setShowDashboard] = useState(false)
   // Editor state (mirrors SceneData)
   const [uploadedImage, setUploadedImage] = useState<string | null>(null)
-  const [model, setModel] = useState<'Monk' | 'FinalBaseMesh'>('FinalBaseMesh')
+  const [model, setModel] = useState<'Monk' | 'FinalBaseMesh' | 'Human'>('FinalBaseMesh')
   const [decalRotation, setDecalRotation] = useState(0)
   const [decalScale, setDecalScale] = useState(1)
   const [decalColor, setDecalColor] = useState('#ffffff') // Default white (no tint)

@@ -1,10 +1,12 @@
 import type { LightingPresetKey } from '../config/lightingPresets';
 
+export type PreviewModel = 'Monk' | 'FinalBaseMesh' | 'Human';
+
 export interface BodyMeshDef {
   id: string;
   label: string;
   thumbnail: string;
-  previewModel: 'Monk' | 'FinalBaseMesh';
+  previewModel: PreviewModel;
   blendAsset: string;
 }
 export interface SkinToneDef {
@@ -47,6 +49,13 @@ export const REGISTRY = {
       thumbnail: '/builder/forearm.jpg',
       previewModel: 'Monk',
       blendAsset: 'forearm.blend',
+    },
+    {
+      id: 'human',
+      label: 'Human',
+      thumbnail: '/builder/human.jpg',
+      previewModel: 'Human',
+      blendAsset: 'human.blend',
     },
   ] as BodyMeshDef[],
 

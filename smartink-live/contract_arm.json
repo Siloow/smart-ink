@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "bodyMeshId": "body_full",
+  "skinToneId": "tone_03",
+  "poseId": "arm_extended",
+  "lookId": "dramatic_rim",
+  "inkTextureUrl": "ink.png",
+  "camera": {
+    "position": [
+      6,
+      4,
+      6
+    ],
+    "target": [
+      0,
+      0,
+      0
+    ],
+    "fov": 45,
+    "aspect": 1
+  },
+  "output": {
+    "qualityTier": "preview",
+    "width": 1024,
+    "height": 1024
+  }
+}
