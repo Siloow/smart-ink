@@ -7,7 +7,12 @@ SCRIPT="$DIR/sceneImporter.py"
 BLENDER="${BLENDER:-blender}"
 
 if [[ ! -f "$SCRIPT" ]]; then
-  SCRIPT="$(cd "$(dirname "$0")/.." && pwd)/public/blender-scripts/sceneImporter.py"
+  ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+  if [[ -f "$ROOT/smartink-live/sceneImporter.py" ]]; then
+    SCRIPT="$ROOT/smartink-live/sceneImporter.py"
+  else
+    SCRIPT="$ROOT/public/blender-scripts/sceneImporter.py"
+  fi
 fi
 
 "$BLENDER" -b -P "$SCRIPT" -- "$JSON" "$@"

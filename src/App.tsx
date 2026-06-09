@@ -474,7 +474,7 @@ function App() {
       }
       await syncToLiveWatcher(shot.contract, shot.inkBlob)
       setLiveSyncStatus('done')
-      setLiveSyncMessage('Synced — open Blender with watch_dev.py; scene refreshes in ~1s.')
+      setLiveSyncMessage('Synced — run: cd smartink-live && blender --python watch_dev.py')
     } catch (e) {
       console.error('Live sync failed:', e)
       setLiveSyncStatus('error')
@@ -764,16 +764,17 @@ function App() {
                 {isExportingBlender ? 'Exporting…' : 'Download for Blender'}
               </button>
               <a
-                href="/blender-scripts/sceneImporter.py"
+                href="/smartink-live/sceneImporter.py"
                 className="btn-modal-blender btn-modal-blender--secondary"
                 download="sceneImporter.py"
               >
-                Download Blender script
+                Download sceneImporter.py
               </a>
             </div>
             <p className="modal-blender-hint">
-              Place <code>contract.json</code>, <code>ink.png</code>, and your body mesh in one folder, then run:{' '}
-              <code>blender --background --python sceneImporter.py -- contract.json</code>
+              Place <code>contract.json</code>, <code>ink.png</code>, and your body mesh in{' '}
+              <code>smartink-live/</code>, then run:{' '}
+              <code>blender --background --python smartink-live/sceneImporter.py -- contract.json</code>
             </p>
 
             {getRenderTargetLabel() === 'local' && (
@@ -782,7 +783,8 @@ function App() {
                 <h3 className="modal-blender-title">Live Blender preview</h3>
                 <p className="modal-blender-desc">
                   Push <code>contract.json</code> + <code>ink.png</code> to{' '}
-                  <code>~/smartink-live/</code> for <code>watch_dev.py</code> — no Cycles render, scene rebuilds in the GUI in ~1s.
+                  <code>smartink-live/</code> (synced with <code>~/smartink-live</code>), then run{' '}
+                  <code>watch_dev.py</code> from that folder — no Cycles render, scene rebuilds in the GUI in ~1s.
                 </p>
                 <div className="modal-blender-actions">
                   <button
@@ -797,7 +799,17 @@ function App() {
                         ? 'Sync again'
                         : 'Preview in Blender'}
                   </button>
+                  <a
+                    href="/smartink-live/watch_dev.py"
+                    className="btn-modal-blender btn-modal-blender--secondary"
+                    download="watch_dev.py"
+                  >
+                    Download watch_dev.py
+                  </a>
                 </div>
+                <p className="modal-blender-hint">
+                  <code>cd smartink-live && blender --python watch_dev.py</code>
+                </p>
                 {liveSyncStatus === 'error' && (
                   <p style={{ color: 'var(--red-500, #ef4444)', fontSize: '13px', marginTop: '8px' }}>
                     {liveSyncMessage}

@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "render-server": "bash tools/start-render-server.sh",
+    "setup-live": "bash tools/setup-smartink-live.sh",
     "build": "vite build",
     "typecheck": "tsc -b",
     "lint": "eslint .",
