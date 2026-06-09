@@ -43,7 +43,7 @@ LOOK_WORLDS: Dict[str, Dict[str, Any]] = {
 }
 
 OUTPUT_TIERS: Dict[str, Dict[str, int]] = {
-    "preview": {"samples": 32, "max_dim": 768},
+    "preview": {"samples": 16, "max_dim": 512},
     "final": {"samples": 256, "max_dim": 2048},
 }
 
@@ -99,8 +99,17 @@ def three_to_blender_rotation_euler(rot: Dict[str, Any], order: str = "XYZ") -> 
 
 
 def fov_degrees_to_focal_length_mm(fov_degrees: float, sensor_height_mm: float = 24.0) -> float:
+    """Three.js PerspectiveCamera.fov is vertical; match with Blender sensor_fit=VERTICAL."""
     fov_rad = math.radians(fov_degrees)
     return sensor_height_mm / (2.0 * math.tan(fov_rad / 2.0))
+
+
+def center_body_at_origin(body: bpy.types.Object) -> None:
+    """Match ModelWithUVTattoo: subtract bounding-box center so mesh sits at origin."""
+    bpy.context.view_layer.update()
+    world_corners = [body.matrix_world @ Vector(corner) for corner in body.bound_box]
+    center = sum(world_corners, Vector()) / len(world_corners)
+    body.location -= center
 
 
 def hex_to_rgb(hex_str: str) -> Tuple[float, float, float]:
@@ -398,28 +407,62 @@ def apply_uv_ink_layer(body: bpy.types.Object, ink_path: str) -> None:
     links.new(mix.outputs["Result"], base_color_socket)
 
 
-def setup_camera(cam_data: Dict[str, Any]) -> None:
+def setup_camera(cam_data: Dict[str, Any]) -> bpy.types.Object:
+    """Recreate the browser orbit camera: Y-up position/target, vertical FOV, look-at rotation."""
     pos = cam_data.get("position", [0, 1.5, 2.5])
     target = cam_data.get("target", [0, 0, 0])
-    fov_deg = cam_data.get("fov", 40)
-    aspect = float(cam_data.get("aspect", cam_data.get("aspectRatio", 1.0)))
+    fov_deg = float(cam_data.get("fov", 40))
 
     bpy.ops.object.camera_add()
     cam_obj = bpy.context.active_object
-    cam_obj.location = three_to_blender_position(pos)
+    cam_obj.name = "Camera"
+    cam_loc = three_to_blender_position(pos)
+    target_loc = three_to_blender_position(target)
+    cam_obj.location = cam_loc
+
+    direction = target_loc - cam_loc
+    if direction.length > 0.001:
+        cam_obj.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
+
     cam = cam_obj.data
     cam.type = "PERSP"
-    cam.lens = fov_degrees_to_focal_length_mm(fov_deg)
-    cam.sensor_fit = "HORIZONTAL" if aspect >= 1.0 else "VERTICAL"
-
-    target_empty = bpy.data.objects.new("CamTarget", None)
-    bpy.context.collection.objects.link(target_empty)
-    target_empty.location = three_to_blender_position(target)
-    constraint = cam_obj.constraints.new(type="TRACK_TO")
-    constraint.target = target_empty
-    constraint.track_axis = "TRACK_NEGATIVE_Z"
-    constraint.up_axis = "UP_Y"
+    cam.sensor_width = 36.0
+    cam.sensor_height = 24.0
+    cam.sensor_fit = "VERTICAL"
+    cam.lens = fov_degrees_to_focal_length_mm(fov_deg, sensor_height_mm=cam.sensor_height)
     bpy.context.scene.camera = cam_obj
+    return cam_obj
+
+
+def focus_viewport_on_camera() -> None:
+    """In GUI mode, switch the 3D viewport to the scene camera (matches browser framing)."""
+    if bpy.app.background:
+        return
+    if not bpy.context.scene.camera:
+        return
+    wm = bpy.context.window_manager
+    if not wm:
+        return
+    for win in wm.windows:
+        screen = win.screen
+        if not screen:
+            continue
+        for area in screen.areas:
+            if area.type != "VIEW_3D":
+                continue
+            space = area.spaces.active
+            if space.type != "VIEW_3D":
+                continue
+            region = next((r for r in area.regions if r.type == "WINDOW"), None)
+            if not region:
+                continue
+            space.region_3d.view_perspective = "CAMERA"
+            with bpy.context.temp_override(window=win, area=area, region=region, space_data=space):
+                try:
+                    bpy.ops.view3d.view_camera()
+                except RuntimeError:
+                    pass
+            return
 
 
 def setup_output(output: Dict[str, Any], contract_dir: str) -> str:
@@ -427,10 +470,10 @@ def setup_output(output: Dict[str, Any], contract_dir: str) -> str:
     scene.render.engine = "CYCLES"
     # Headless CLI often has no GPU context on macOS; CPU is reliable for local renders.
     scene.cycles.device = "CPU" if bpy.app.background else "GPU"
-    scene.cycles.use_denoising = True
-
-    tier = OUTPUT_TIERS.get(output.get("qualityTier", "final"), OUTPUT_TIERS["final"])
+    tier_id = output.get("qualityTier", "final")
+    tier = OUTPUT_TIERS.get(tier_id, OUTPUT_TIERS["final"])
     scene.cycles.samples = tier["samples"]
+    scene.cycles.use_denoising = tier_id != "preview"
 
     width = int(output.get("width", tier["max_dim"]))
     height = int(output.get("height", tier["max_dim"]))
@@ -468,6 +511,7 @@ def build_scene(contract_path: str) -> str:
     if body is None:
         raise RuntimeError(f"Could not load body mesh: {contract['bodyMeshId']}")
 
+    center_body_at_origin(body)
     ensure_box_projection_uvs(body)
     apply_skin(body, contract.get("skinToneId", "tone_03"))
     apply_pose(contract.get("poseId", "neutral"), body)
@@ -479,6 +523,7 @@ def build_scene(contract_path: str) -> str:
     ink_path = ink_name if os.path.isabs(ink_name) else os.path.join(contract_dir, os.path.basename(ink_name))
     apply_uv_ink_layer(body, ink_path)
     setup_camera(contract.get("camera", {}))
+    focus_viewport_on_camera()
     return setup_output(contract.get("output", {}), contract_dir)
 
 

@@ -52,7 +52,7 @@ export default function ScenesDashboard({ onSelectScene, onOpenLanding }: Props)
       skinToneId: 'tone_03',
       poseId: 'neutral',
       lookId: 'studio_softbox',
-      qualityTier: 'final',
+      qualityTier: 'preview',
       createdAt: new Date(),
       updatedAt: new Date(),
       createdBy: 'demo',
