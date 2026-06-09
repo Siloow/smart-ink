@@ -36,7 +36,9 @@ export default function CinematicLights({ preset, lights, scale, performanceMode
                 castShadow={shadow}
                 shadow-mapSize-width={2048}
                 shadow-mapSize-height={2048}
-              />
+              >
+                <object3D position={light.target ?? [0, 0, 0]} />
+              </directionalLight>
             );
           case 'spot':
             return (
@@ -48,7 +50,9 @@ export default function CinematicLights({ preset, lights, scale, performanceMode
                 intensity={threeIntensity}
                 color={light.color}
                 castShadow={shadow}
-              />
+              >
+                <object3D position={light.target ?? [0, 0, 0]} />
+              </spotLight>
             );
           case 'point':
             return (

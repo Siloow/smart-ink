@@ -197,7 +197,11 @@ function App() {
       },
       'ink.png',
       { width: baseWidth, height: outHeight },
-      { presetName: lightingPreset, lights },
+      {
+        presetName: lightingPreset,
+        intensityScale: LIGHTING_PRESETS[lightingPreset].threeIntensityScale,
+        lights,
+      },
     )
     return { contract, inkBlob }
   }, [uploadedImage, bodyMeshId, skinToneId, poseId, lookId, qualityTier, cameraState, threeRenderer, lightingPreset, lights])
