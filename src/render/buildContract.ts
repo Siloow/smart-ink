@@ -1,4 +1,4 @@
-import { RENDER_SCHEMA_VERSION, type RenderContract } from './contract';
+import { RENDER_SCHEMA_VERSION, type RenderContract, type ContractLight } from './contract';
 import { REGISTRY, findById } from './registry';
 
 export interface BuilderState {
@@ -21,7 +21,8 @@ export function buildRenderContract(
   builder: BuilderState,
   shot: ShotState,
   inkTextureUrl: string,
-  dims: { width: number; height: number }
+  dims: { width: number; height: number },
+  lighting?: { presetName: string; lights: ContractLight[] }
 ): RenderContract {
   return {
     schemaVersion: RENDER_SCHEMA_VERSION,
@@ -32,6 +33,7 @@ export function buildRenderContract(
     inkTextureUrl,
     camera: { ...shot },
     output: { qualityTier: builder.qualityTier, width: dims.width, height: dims.height },
+    ...(lighting ? { lighting } : {}),
   };
 }
 

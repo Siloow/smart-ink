@@ -223,3 +223,11 @@ export const LIGHTING_PRESETS: Record<LightingPresetKey, LightingPreset> = {
     ],
   },
 };
+
+export function resolveRig(preset: LightingPresetKey): LightDefinition[] {
+  return LIGHTING_PRESETS[preset].lights.map((l) => ({
+    ...l,
+    position: [...l.position] as [number, number, number],
+    target: l.target ? ([...l.target] as [number, number, number]) : undefined,
+  }));
+}

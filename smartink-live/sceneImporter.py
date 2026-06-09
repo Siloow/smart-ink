@@ -350,7 +350,7 @@ def apply_pose(pose_id: str, body: bpy.types.Object) -> None:
     _ = pose_id, body
 
 
-def apply_world(look_id: str) -> None:
+def apply_world(look_id: str, lights_override: Optional[List[Dict[str, Any]]] = None) -> None:
     world_def = LOOK_WORLDS.get(look_id, LOOK_WORLDS["studio_softbox"])
     world = bpy.context.scene.world
     if not world:
@@ -366,7 +366,10 @@ def apply_world(look_id: str) -> None:
     bg.inputs["Color"].default_value = (*color, 1.0)
     bg.inputs["Strength"].default_value = 1.0
     links.new(bg.outputs["Background"], output.inputs["Surface"])
-    setup_lights(world_def.get("lighting", "studio"))
+    if lights_override:
+        setup_lights_from_list(lights_override)
+    else:
+        setup_lights(world_def.get("lighting", "studio"))
 
 
 def _ambient_add_to_world(rel_intensity: float, color_hex: str) -> None:
@@ -381,7 +384,10 @@ def _ambient_add_to_world(rel_intensity: float, color_hex: str) -> None:
 
 
 def setup_lights(preset_name: str) -> None:
-    lights = LIGHTING_PRESETS.get(preset_name, LIGHTING_PRESETS["studio"])
+    setup_lights_from_list(LIGHTING_PRESETS.get(preset_name, LIGHTING_PRESETS["studio"]))
+
+
+def setup_lights_from_list(lights: List[Dict[str, Any]]) -> None:
     for light in lights:
         ltype = light.get("type", "point")
         pos = light.get("position", [0, 0, 0])
@@ -578,7 +584,10 @@ def build_scene(contract_path: str) -> str:
     ensure_box_projection_uvs(body)
     apply_skin(body, contract.get("skinToneId", "tone_03"), contract_dir)
     apply_pose(contract.get("poseId", "neutral"), body)
-    apply_world(contract.get("lookId", "studio_softbox"))
+    apply_world(
+        contract.get("lookId", "studio_softbox"),
+        (contract.get("lighting") or {}).get("lights"),
+    )
 
     ink_name = contract.get("inkTextureUrl", "ink.png")
     if ink_name.startswith("data:"):

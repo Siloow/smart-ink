@@ -1,21 +1,25 @@
 import React from 'react';
-import { LIGHTING_PRESETS, type LightingPresetKey } from './config/lightingPresets';
+import { LIGHTING_PRESETS, type LightingPresetKey, type LightDefinition } from './config/lightingPresets';
 
 export type { LightingPresetKey };
 
 interface CinematicLightsProps {
   preset: LightingPresetKey;
+  lights?: LightDefinition[];
+  scale?: number;
   performanceMode?: boolean;
 }
 
-export default function CinematicLights({ preset, performanceMode }: CinematicLightsProps) {
+export default function CinematicLights({ preset, lights, scale, performanceMode }: CinematicLightsProps) {
   const perf = performanceMode ? 0.5 : 1;
   const config = LIGHTING_PRESETS[preset];
+  const rig = lights ?? config.lights;
+  const intensityScale = scale ?? config.threeIntensityScale;
 
   return (
     <>
-      {config.lights.map((light, i) => {
-        const threeIntensity = light.intensity * config.threeIntensityScale * perf;
+      {rig.map((light, i) => {
+        const threeIntensity = light.intensity * intensityScale * perf;
         const shadow = !performanceMode && (light.castShadow ?? false);
         const key = `${preset}-${i}-${light.type}`;
 

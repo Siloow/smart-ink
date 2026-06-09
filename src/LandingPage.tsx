@@ -70,12 +70,6 @@ const LandingPage: React.FC<LandingPageProps> = ({ onNavigateToApp }) => {
         </button>
       </div>
 
-      <div className="viewport-hint">
-        <div className="hint-label">
-          <span>↻</span> Orbit with drag in the editor
-        </div>
-      </div>
-
       <div className="grid-floor" aria-hidden />
 
       <div className="landing-content" id="features">
