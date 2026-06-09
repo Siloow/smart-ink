@@ -223,8 +223,3 @@ export const LIGHTING_PRESETS: Record<LightingPresetKey, LightingPreset> = {
     ],
   },
 };
-
-/** Serialize preset lights for Blender JSON (deep copy). */
-export function getExportLightsForPreset(key: LightingPresetKey): TattooLight[] {
-  return LIGHTING_PRESETS[key].lights.map((L) => ({ ...L }));
-}

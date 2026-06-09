@@ -8,7 +8,7 @@ BLENDER="${BLENDER:-blender}"
 IMPORTER="$ROOT/public/blender-scripts/sceneImporter.py"
 mkdir -p "$OUT"
 
-for json in studio_front.json sunset_threequarter.json; do
+for json in dramatic_uv.json; do
   name="${json%.json}"
   echo "Rendering $name..."
   cp "$IMPORTER" "$FIXTURES/sceneImporter.py"

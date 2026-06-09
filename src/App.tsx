@@ -2,7 +2,6 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { Canvas, useThree } from '@react-three/fiber'
 // import { OrbitControls } from '@react-three/drei'
 import OrbitControlsWithCmdLock from './OrbitControlsWithCmdLock'
-import ModelWithDecal from './ModelWithDecal'
 import ModelWithUVTattoo, { type ModelWithUVTattooHandle } from './ModelWithUVTattoo'
 import CinematicLights from './CinematicLights'
 import TopMenuBar from './TopMenuBar'
@@ -12,38 +11,24 @@ import LoginPage from './LoginPage'
 import EditorLeftPanel from './EditorLeftPanel'
 import type { SceneData } from './types'
 import { updateScene } from './sceneStorage'
-import {
-  exportSceneForBlender,
-  exportBackground,
-  downloadJSON,
-  downloadBlob,
-  type ExportForBlenderParams,
-} from './utils/sceneExporter'
+import { downloadFiles } from './utils/sceneExporter'
 import type { LightingPresetKey } from './config/lightingPresets'
 import {
-  cloudRender,
   renderContract,
+  syncToLiveWatcher,
   checkRenderServer,
   getRenderTargetLabel,
   type RenderStatus,
 } from './services/cloudRenderService'
 import { bakeInkLayer } from './render/bakeInkLayer'
 import { buildRenderContract } from './render/buildContract'
+import type { RenderContract } from './render/contract'
 import { REGISTRY, findById } from './render/registry'
 import { migrateScene } from './sceneStorage'
 import * as THREE from 'three'
 
 function previewModelForBody(bodyMeshId: string): 'Monk' | 'FinalBaseMesh' {
   return findById(REGISTRY.bodyMeshes, bodyMeshId)?.previewModel ?? 'FinalBaseMesh'
-}
-
-function blobToDataUrl(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result as string)
-    reader.onerror = () => reject(reader.error)
-    reader.readAsDataURL(blob)
-  })
 }
 
 const BG_PRESETS = {
@@ -124,25 +109,12 @@ function App() {
   const [decalNormal, setDecalNormal] = useState<[number, number, number] | null>(null)
   const [cameraState, setCameraState] = useState<{ position: [number, number, number], target: [number, number, number], fov: number }>(CAMERA_PRESETS.threeQuarter)
   const [performanceMode, setPerformanceMode] = useState(false)
-  const [uvTattooMode, setUvTattooMode] = useState(true)
   const [bodyMeshId, setBodyMeshId] = useState('body_full')
   const [skinToneId, setSkinToneId] = useState('tone_03')
   const [poseId, setPoseId] = useState('neutral')
   const [lookId, setLookId] = useState('studio_softbox')
   const [qualityTier, setQualityTier] = useState<'preview' | 'final'>('final')
   const uvPlacementRef = useRef<ModelWithUVTattooHandle>(null)
-
-  const handleUvTattooModeToggle = useCallback(() => {
-    setUvTattooMode((prev) => {
-      const enteringUvMode = !prev
-      if (enteringUvMode) {
-        setDecalVisible(false)
-        setDecalPosition(null)
-        setDecalNormal(null)
-      }
-      return enteringUvMode
-    })
-  }, [])
 
   // Export state
   const [showExportModal, setShowExportModal] = useState(false)
@@ -158,17 +130,24 @@ function App() {
   const [cloudRenderMessage, setCloudRenderMessage] = useState('')
   const [cloudRenderImage, setCloudRenderImage] = useState<string | null>(null)
   const [renderServerOnline, setRenderServerOnline] = useState<boolean | null>(null)
+  const [liveSyncStatus, setLiveSyncStatus] = useState<'idle' | 'syncing' | 'done' | 'error'>('idle')
+  const [liveSyncMessage, setLiveSyncMessage] = useState('')
 
   const canvasContainerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!showExportModal) return
     let cancelled = false
-    void checkRenderServer().then((ok) => {
-      if (!cancelled) setRenderServerOnline(ok)
-    })
+    const poll = () => {
+      void checkRenderServer().then((ok) => {
+        if (!cancelled) setRenderServerOnline(ok)
+      })
+    }
+    poll()
+    const interval = window.setInterval(poll, 3000)
     return () => {
       cancelled = true
+      window.clearInterval(interval)
     }
   }, [showExportModal])
 
@@ -179,47 +158,49 @@ function App() {
     setThreeCamera(camera)
   }, [])
 
-  type DecalExportRow = ExportForBlenderParams['decals'][number]
+  type Shot = { contract: RenderContract; inkBlob: Blob }
 
-  const buildBlenderDecals = useCallback(
-    (decalTextureFilename: string): DecalExportRow[] => {
-      if (!uploadedImage || !decalPosition) return []
-      return [
-        {
-          textureUrl: decalTextureFilename,
-          position: decalPosition,
-          rotation: [0, 0, (decalRotation * Math.PI) / 180],
-          scale: [decalScale, decalScale],
-          opacity: decalOpacity,
-        },
-      ]
-    },
-    [uploadedImage, decalPosition, decalRotation, decalScale, decalOpacity]
-  )
+  const buildShot = useCallback(async (): Promise<Shot | null> => {
+    const placement = uvPlacementRef.current?.getPlacement()
+    if (!placement?.hasPlaced) {
+      setCloudRenderStatus('error')
+      setCloudRenderMessage('Place the tattoo on the mesh first.')
+      return null
+    }
+    if (!uploadedImage) {
+      setCloudRenderStatus('error')
+      setCloudRenderMessage('Upload a design image first.')
+      return null
+    }
 
-  const buildBlenderExportParams = useCallback(
-    (options: { samples: number; outputPath?: string; decalTextureFilename: string }): ExportForBlenderParams => {
-      const canvas = threeRenderer?.domElement
-      const aspectRatio =
-        canvas && canvas.clientHeight > 0 ? canvas.clientWidth / canvas.clientHeight : 1
-      return {
-        bodyMeshId: model,
-        decals: buildBlenderDecals(options.decalTextureFilename),
-        camera: {
-          position: cameraState.position,
-          target: cameraState.target,
-          fov: cameraState.fov,
-          aspectRatio,
-        },
-        lightingPresetKey: lightingPreset,
-        background: exportBackground(background),
-        resolution: [2048, 2048],
-        samples: options.samples,
-        ...(options.outputPath != null ? { outputPath: options.outputPath } : {}),
-      }
-    },
-    [model, buildBlenderDecals, cameraState, threeRenderer, lightingPreset, background]
-  )
+    const inkBlob = await bakeInkLayer({
+      tattooImage: uploadedImage,
+      center: placement.center,
+      scaleUV: placement.scaleUV,
+      rotationRad: placement.rotationRad,
+    })
+
+    const canvas = threeRenderer?.domElement
+    const aspect = canvas && canvas.clientHeight > 0 ? canvas.clientWidth / canvas.clientHeight : 1
+    const outHeight = Math.max(1, Math.round(2048 / aspect))
+
+    const contract = buildRenderContract(
+      { bodyMeshId, skinToneId, poseId, lookId, qualityTier },
+      { position: cameraState.position, target: cameraState.target, fov: cameraState.fov, aspect },
+      'ink.png',
+      { width: 2048, height: outHeight },
+    )
+    return { contract, inkBlob }
+  }, [uploadedImage, bodyMeshId, skinToneId, poseId, lookId, qualityTier, cameraState, threeRenderer])
+
+  const handleLookChange = useCallback((id: string) => {
+    setLookId(id)
+    const look = findById(REGISTRY.looks, id)
+    if (look) {
+      setLightingPreset(look.previewLighting)
+      setBackground(look.previewBackground as BgKey)
+    }
+  }, [])
 
   const loadScene = (scene: SceneData) => {
     const migrated = migrateScene(scene)
@@ -451,36 +432,42 @@ function App() {
     }
   }
 
-  // Export scene for Blender (JSON + optional decal image)
-  const exportForBlender = () => {
+  const exportForBlender = async () => {
     setIsExportingBlender(true)
     try {
-      const decalFilename = 'decal.png'
-      if (uploadedImage && decalPosition) {
-        const base64 = uploadedImage.replace(/^data:image\/\w+;base64,/, '')
-        const binary = atob(base64)
-        const bytes = new Uint8Array(binary.length)
-        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
-        const blob = new Blob([bytes], { type: 'image/png' })
-        downloadBlob(decalFilename, blob)
-      }
-      const sceneExport = exportSceneForBlender(
-        buildBlenderExportParams({
-          samples: 256,
-          outputPath: './renders/output.png',
-          decalTextureFilename: decalFilename,
-        })
-      )
-      const filename = `smart-ink-blender-${Date.now()}.json`
-      downloadJSON(filename, sceneExport)
+      const shot = await buildShot()
+      if (!shot) return
+      await downloadFiles([
+        { filename: 'ink.png', blob: shot.inkBlob },
+        { filename: 'contract.json', blob: new Blob([JSON.stringify(shot.contract, null, 2)], { type: 'application/json' }) },
+      ])
     } catch (e) {
-      console.error('Blender export failed:', e)
+      console.error('Export failed:', e)
     } finally {
       setIsExportingBlender(false)
     }
   }
 
-  // Cloud render via server-side Blender/Cycles
+  const handleSyncToBlender = async () => {
+    setLiveSyncStatus('syncing')
+    setLiveSyncMessage('Pushing shot to Blender watcher…')
+    try {
+      const shot = await buildShot()
+      if (!shot) {
+        setLiveSyncStatus('error')
+        setLiveSyncMessage('Place a tattoo and upload a design first.')
+        return
+      }
+      await syncToLiveWatcher(shot.contract, shot.inkBlob)
+      setLiveSyncStatus('done')
+      setLiveSyncMessage('Synced — open Blender with watch_dev.py; scene refreshes in ~1s.')
+    } catch (e) {
+      console.error('Live sync failed:', e)
+      setLiveSyncStatus('error')
+      setLiveSyncMessage(e instanceof Error ? e.message : 'Sync failed')
+    }
+  }
+
   const handleCloudRender = async () => {
     setCloudRenderStatus('uploading')
     setCloudRenderMessage('Preparing scene...')
@@ -492,58 +479,12 @@ function App() {
     }
 
     try {
-      if (uvTattooMode) {
-        const placement = uvPlacementRef.current?.getPlacement()
-        if (!placement?.hasPlaced) {
-          setCloudRenderStatus('error')
-          setCloudRenderMessage('Place the tattoo on the mesh in UV mode first.')
-          return
-        }
-        if (!uploadedImage) {
-          setCloudRenderStatus('error')
-          setCloudRenderMessage('Upload a design image first.')
-          return
-        }
-
-        setCloudRenderMessage('Baking UV ink layer...')
-        const inkBlob = await bakeInkLayer({
-          tattooImage: uploadedImage,
-          center: placement.center,
-          scaleUV: placement.scaleUV,
-          rotationRad: placement.rotationRad,
-        })
-        const inkUrl = await blobToDataUrl(inkBlob)
-
-        const canvas = threeRenderer?.domElement
-        const aspect =
-          canvas && canvas.clientHeight > 0 ? canvas.clientWidth / canvas.clientHeight : 1
-        const outHeight = Math.max(1, Math.round(2048 / aspect))
-
-        const contract = buildRenderContract(
-          { bodyMeshId, skinToneId, poseId, lookId, qualityTier },
-          {
-            position: cameraState.position,
-            target: cameraState.target,
-            fov: cameraState.fov,
-            aspect,
-          },
-          inkUrl,
-          { width: 2048, height: outHeight }
-        )
-
-        const imageUrl = await renderContract(contract, inkBlob, { onStatusChange })
-        setCloudRenderImage(imageUrl)
-        return
-      }
-
-      const sceneExport = exportSceneForBlender(
-        buildBlenderExportParams({ samples: 128, decalTextureFilename: 'decal.png' })
-      )
-
-      const imageUrl = await cloudRender(sceneExport, uploadedImage, model, { onStatusChange })
+      const shot = await buildShot()
+      if (!shot) return
+      const imageUrl = await renderContract(shot.contract, shot.inkBlob, { onStatusChange })
       setCloudRenderImage(imageUrl)
     } catch (e) {
-      console.error('Cloud render failed:', e)
+      console.error('Render failed:', e)
       setCloudRenderStatus('error')
       setCloudRenderMessage(e instanceof Error ? e.message : 'Unknown error')
     }
@@ -614,14 +555,6 @@ function App() {
         <div className="editor-toolbar-actions editor-toolbar-actions--spread">
           <button
             type="button"
-            className={`tool-btn-nav ${uvTattooMode ? 'tool-btn-nav--green-active' : 'tool-btn-nav--blue'}`}
-            onClick={handleUvTattooModeToggle}
-            title="Toggle UV-space tattoo projection"
-          >
-            UV mode
-          </button>
-          <button
-            type="button"
             className="tool-btn tool-btn--ghost"
             title="Share"
             onClick={() => {}}
@@ -674,37 +607,18 @@ function App() {
             >
         <ExportRenderer onRendererReady={handleRendererReady} />
         <CinematicLights key={lightingPreset} preset={lightingPreset} performanceMode={performanceMode} />
-        {uvTattooMode ? (
-          <ModelWithUVTattoo
-            ref={uvPlacementRef}
-            key={`uv-${model}`}
-            uploadedImage={uploadedImage}
-            model={model}
-            decalRotation={decalRotation}
-            decalScale={decalScale}
-            decalColor={decalColor}
-            decalOpacity={decalOpacity}
-            setDecalVisible={setDecalVisible}
-            showSafeZone={true}
-          />
-        ) : (
-          <ModelWithDecal
-            key={model}
-            uploadedImage={uploadedImage}
-            model={model}
-            decalRotation={decalRotation}
-            decalScale={decalScale}
-            decalColor={decalColor}
-            decalOpacity={decalOpacity}
-            setDecalVisible={setDecalVisible}
-            setDecalOriginData={(data) => {
-              setDecalPosition(data ? data.position : null)
-              setDecalNormal(data ? data.normal : null)
-            }}
-            decalPosition={decalPosition}
-            decalNormal={decalNormal}
-          />
-        )}
+        <ModelWithUVTattoo
+          ref={uvPlacementRef}
+          key={`uv-${model}`}
+          uploadedImage={uploadedImage}
+          model={model}
+          decalRotation={decalRotation}
+          decalScale={decalScale}
+          decalColor={decalColor}
+          decalOpacity={decalOpacity}
+          setDecalVisible={setDecalVisible}
+          showSafeZone={true}
+        />
         <OrbitControlsWithCmdLock
           cameraState={cameraState}
           setCameraState={setCameraState}
@@ -742,6 +656,9 @@ function App() {
           performanceMode={performanceMode}
           setPerformanceMode={setPerformanceMode}
           onExport={() => setShowExportModal(true)}
+          lookId={lookId}
+          onLookChange={handleLookChange}
+          LOOKS={REGISTRY.looks}
         />
       </div>
 
@@ -812,7 +729,7 @@ function App() {
                 onClick={exportForBlender}
                 disabled={isExportingBlender}
               >
-                {isExportingBlender ? 'Exporting…' : 'Download scene (JSON)'}
+                {isExportingBlender ? 'Exporting…' : 'Download for Blender'}
               </button>
               <a
                 href="/blender-scripts/sceneImporter.py"
@@ -823,9 +740,49 @@ function App() {
               </a>
             </div>
             <p className="modal-blender-hint">
-              Place the JSON file, <code>decal.png</code> (if exported), and your body mesh (e.g. <code>FinalBaseMesh.obj</code>) in the same folder, then run:{' '}
-              <code>blender --background --python sceneImporter.py -- scene-export.json</code>
+              Place <code>contract.json</code>, <code>ink.png</code>, and your body mesh in one folder, then run:{' '}
+              <code>blender --background --python sceneImporter.py -- contract.json</code>
             </p>
+
+            {getRenderTargetLabel() === 'local' && (
+              <>
+                <div className="modal-blender-divider" />
+                <h3 className="modal-blender-title">Live Blender preview</h3>
+                <p className="modal-blender-desc">
+                  Push <code>contract.json</code> + <code>ink.png</code> to{' '}
+                  <code>~/smartink-live/</code> for <code>watch_dev.py</code> — no Cycles render, scene rebuilds in the GUI in ~1s.
+                </p>
+                <div className="modal-blender-actions">
+                  <button
+                    type="button"
+                    className="btn-modal-blender"
+                    onClick={handleSyncToBlender}
+                    disabled={liveSyncStatus === 'syncing' || renderServerOnline === false}
+                  >
+                    {liveSyncStatus === 'syncing'
+                      ? 'Syncing…'
+                      : liveSyncStatus === 'done'
+                        ? 'Sync again'
+                        : 'Preview in Blender'}
+                  </button>
+                </div>
+                {liveSyncStatus === 'error' && (
+                  <p style={{ color: 'var(--red-500, #ef4444)', fontSize: '13px', marginTop: '8px' }}>
+                    {liveSyncMessage}
+                  </p>
+                )}
+                {liveSyncStatus === 'done' && (
+                  <p style={{ color: 'var(--accent-green, #22c55e)', fontSize: '13px', marginTop: '8px' }}>
+                    {liveSyncMessage}
+                  </p>
+                )}
+                {renderServerOnline === false && (
+                  <p className="modal-blender-hint" style={{ marginTop: '8px' }}>
+                    Start the local server: <code>npm run render-server</code>
+                  </p>
+                )}
+              </>
+            )}
 
             <div className="modal-blender-divider" />
             <h3 className="modal-blender-title">Cloud Render (Cycles)</h3>

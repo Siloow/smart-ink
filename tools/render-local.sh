@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Usage: ./tools/render-local.sh path/to/scene-export.json [--preview]
+# Usage: ./tools/render-local.sh path/to/contract.json
 set -euo pipefail
 JSON="$1"; shift || true
 DIR="$(cd "$(dirname "$JSON")" && pwd)"
