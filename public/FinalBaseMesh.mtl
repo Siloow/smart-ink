@@ -1,0 +1,8 @@
+# Companion material for FinalBaseMesh.obj (referenced by mtllib line)
+newmtl default
+Ka 0.800 0.600 0.500
+Kd 0.800 0.600 0.500
+Ks 0.050 0.050 0.050
+Ns 10.0
+d 1.0
+illum 2

@@ -30,6 +30,9 @@ interface TopMenuBarProps {
   performanceMode: boolean;
   setPerformanceMode: (v: boolean) => void;
   onExport: () => void;
+  lookId: string;
+  onLookChange: (id: string) => void;
+  LOOKS: Array<{ id: string; label: string }>;
 }
 
 const sectionTitle: React.CSSProperties = {
@@ -138,6 +141,9 @@ export default function TopMenuBar({
   performanceMode,
   setPerformanceMode,
   onExport,
+  lookId,
+  onLookChange,
+  LOOKS,
 }: TopMenuBarProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -263,10 +269,25 @@ export default function TopMenuBar({
       <div className="panel-section">
         <div style={sectionTitle}>
           <FaLightbulb style={{ display: 'inline', marginRight: 6, verticalAlign: 'middle' }} />
-          Lighting
+          Look
         </div>
         <div style={row}>
-          <span style={label}>Preset</span>
+          <span style={label}>Render look</span>
+          <select
+            value={lookId}
+            onChange={(e) => onLookChange(e.target.value)}
+            style={selectFieldStyle}
+            aria-label="Render look"
+          >
+            {LOOKS.map((look) => (
+              <option key={look.id} value={look.id}>
+                {look.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div style={row}>
+          <span style={label}>Preview lights</span>
           <select
             value={lightingPreset}
             onChange={(e) => setLightingPreset(e.target.value)}

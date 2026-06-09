@@ -7,5 +7,10 @@ export default defineConfig({
   server: {
     host: '0.0.0.0', // Allow connections from any IP
     port: 5173, // Default Vite port
+    proxy: {
+      '/health': 'http://127.0.0.1:8000',
+      '/sync-live': 'http://127.0.0.1:8000',
+      '/render-v2': 'http://127.0.0.1:8000',
+    },
   },
 })
