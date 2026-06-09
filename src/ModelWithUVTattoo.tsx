@@ -12,7 +12,7 @@ import { GLTFLoader, OBJLoader } from 'three-stdlib';
 import * as THREE from 'three';
 import { TextureLoader } from 'three';
 import { TATTOO_LAYER_GLSL } from './render/tattooLayer';
-import { findById, REGISTRY } from './render/registry';
+import { findById, REGISTRY, type PreviewModel } from './render/registry';
 import type { LightDefinition } from './config/lightingPresets';
 
 const SAFE_ZONE = { uMin: 0.05, uMax: 0.95, vMin: 0.08, vMax: 0.92 };
@@ -128,6 +128,49 @@ function ensureUVs(geometry: THREE.BufferGeometry): void {
   geometry.setAttribute('uv', new THREE.BufferAttribute(uvArray, 2));
 }
 
+const HUMAN_TARGET_HEIGHT = 20.74;
+
+const humanObjCache: { root: THREE.Group | null; promise: Promise<THREE.Group> | null } = {
+  root: null,
+  promise: null,
+};
+
+function loadHumanObj(): Promise<THREE.Group> {
+  if (humanObjCache.root) return Promise.resolve(humanObjCache.root);
+  if (!humanObjCache.promise) {
+    humanObjCache.promise = new Promise((resolve, reject) => {
+      new OBJLoader().load(
+        '/human.obj',
+        (obj) => {
+          humanObjCache.root = obj;
+          resolve(obj);
+        },
+        undefined,
+        reject
+      );
+    });
+  }
+  return humanObjCache.promise;
+}
+
+function isHumanAccessoryMaterial(material: THREE.Material | THREE.Material[]): boolean {
+  const materials = Array.isArray(material) ? material : [material];
+  return materials.some((mat) => /eye|lash|tear|brow|moisture|mouth/i.test(mat.name));
+}
+
+function centerAndScaleToHeight(group: THREE.Object3D, targetHeight: number): void {
+  const box = new THREE.Box3().setFromObject(group);
+  const center = new THREE.Vector3();
+  box.getCenter(center);
+  group.position.sub(center);
+
+  const size = new THREE.Vector3();
+  box.getSize(size);
+  if (size.y > 0) {
+    group.scale.setScalar(targetHeight / size.y);
+  }
+}
+
 function createSkinTexture(hexColor: string): THREE.CanvasTexture {
   const size = 1024;
   const canvas = document.createElement('canvas');
@@ -149,7 +192,7 @@ function createSkinTexture(hexColor: string): THREE.CanvasTexture {
   return tex;
 }
 
-type ModelType = 'Monk' | 'FinalBaseMesh';
+type ModelType = PreviewModel;
 
 export interface UVTattooPlacementSnapshot {
   center: [number, number];
@@ -195,7 +238,10 @@ const ModelWithUVTattoo = forwardRef<ModelWithUVTattooHandle, ModelWithUVTattooP
   ) {
     const { camera, scene, gl } = useThree();
     const [cloneGroup, setCloneGroup] = useState<THREE.Object3D | null>(null);
-    const meshRef = useRef<THREE.Mesh | null>(null);
+    const [humanRoot, setHumanRoot] = useState<THREE.Group | null>(
+      () => humanObjCache.root
+    );
+    const pickTargetRef = useRef<THREE.Object3D | null>(null);
     const tattooCenter = useRef(new THREE.Vector2(0.5, 0.5));
     const [hasPlaced, setHasPlaced] = useState(false);
     const hasPlacedRef = useRef(false);
@@ -208,6 +254,25 @@ const ModelWithUVTattoo = forwardRef<ModelWithUVTattooHandle, ModelWithUVTattooP
     const logoTexture = useLoader(TextureLoader, '/logo.png');
     const monkGltf = useLoader(GLTFLoader, '/monk.glb');
     const baseObj = useLoader(OBJLoader, '/FinalBaseMesh.obj');
+
+    useEffect(() => {
+      if (model !== 'Human') return;
+      if (humanRoot) return;
+      let cancelled = false;
+      loadHumanObj()
+        .then((obj) => {
+          if (!cancelled) setHumanRoot(obj);
+        })
+        .catch((err) => {
+          console.error('Failed to load human.obj', err);
+        });
+      return () => {
+        cancelled = true;
+      };
+    }, [model, humanRoot]);
+
+    const enforceSafeZone = model !== 'Human';
+    const safeZoneVisible = showSafeZone && enforceSafeZone;
 
     const skinSwatch =
       findById(REGISTRY.skinTones, skinToneId)?.swatch ?? REGISTRY.skinTones[1].swatch;
@@ -288,7 +353,7 @@ const ModelWithUVTattoo = forwardRef<ModelWithUVTattooHandle, ModelWithUVTattooP
       shaderMaterial.uniforms.tattooScale.value = scaleInUV;
       shaderMaterial.uniforms.tattooRotation.value = THREE.MathUtils.degToRad(decalRotation);
       shaderMaterial.uniforms.tattooVisible.value = hasPlacedRef.current ? 1.0 : 0.0;
-      shaderMaterial.uniforms.showSafeZone.value = showSafeZone ? 1.0 : 0.0;
+      shaderMaterial.uniforms.showSafeZone.value = safeZoneVisible ? 1.0 : 0.0;
 
       const perf = performanceMode ? 0.5 : 1;
       let ambientStrength = 0;
@@ -331,13 +396,41 @@ const ModelWithUVTattoo = forwardRef<ModelWithUVTattooHandle, ModelWithUVTattooP
     });
 
     useEffect(() => {
+      if (model === 'Human' && !humanRoot) {
+        pickTargetRef.current = null;
+        setCloneGroup(null);
+        return;
+      }
+
       let modelGroup: THREE.Object3D;
       if (model === 'Monk') {
         modelGroup = monkGltf.scene;
+      } else if (model === 'Human') {
+        modelGroup = humanRoot!;
       } else {
         modelGroup = baseObj;
       }
-      const group = modelGroup.clone();
+
+      const group = modelGroup.clone(true);
+
+      if (model === 'Human') {
+        group.rotation.x = -Math.PI / 2;
+        group.traverse((child) => {
+          const m = child as THREE.Mesh;
+          if (!m.isMesh) return;
+          if (isHumanAccessoryMaterial(m.material)) {
+            m.visible = false;
+            return;
+          }
+          if (!m.geometry.attributes.uv) ensureUVs(m.geometry);
+          m.material = shaderMaterial;
+        });
+        centerAndScaleToHeight(group, HUMAN_TARGET_HEIGHT);
+        pickTargetRef.current = group;
+        setCloneGroup(group);
+        return;
+      }
+
       const box = new THREE.Box3().setFromObject(group);
       const center = new THREE.Vector3();
       box.getCenter(center);
@@ -348,17 +441,19 @@ const ModelWithUVTattoo = forwardRef<ModelWithUVTattooHandle, ModelWithUVTattooP
         const m = child as THREE.Mesh;
         if (m.isMesh && !targetMesh) targetMesh = m;
       });
-      if (targetMesh) {
-        const geo = (targetMesh.geometry as THREE.BufferGeometry).clone();
+      const mesh = targetMesh as THREE.Mesh | null;
+      if (mesh) {
+        const geo = (mesh.geometry as THREE.BufferGeometry).clone();
         ensureUVs(geo);
-        targetMesh.geometry = geo;
-        targetMesh.material = shaderMaterial;
-        meshRef.current = targetMesh;
+        mesh.geometry = geo;
+        mesh.material = shaderMaterial;
+        pickTargetRef.current = group;
         setCloneGroup(group);
       } else {
+        pickTargetRef.current = null;
         setCloneGroup(null);
       }
-    }, [model, monkGltf, baseObj, shaderMaterial]);
+    }, [model, monkGltf, baseObj, humanRoot, shaderMaterial]);
 
     useEffect(() => {
       setDecalVisible(hasPlaced);
@@ -373,21 +468,25 @@ const ModelWithUVTattoo = forwardRef<ModelWithUVTattooHandle, ModelWithUVTattooP
         mouse.current.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
         mouse.current.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
         raycaster.current.setFromCamera(mouse.current, camera);
-        const m = meshRef.current;
-        if (!m) return null;
-        const hits = raycaster.current.intersectObject(m);
+        const target = pickTargetRef.current;
+        if (!target) return null;
+        const hits = raycaster.current.intersectObject(target, true);
         if (hits.length > 0 && hits[0].uv) return hits[0].uv.clone();
         return null;
       },
       [camera, gl]
     );
 
-    const clampToSafeZone = useCallback((uv: THREE.Vector2, scale: number) => {
-      const half = scale * 0.5;
-      uv.x = Math.max(SAFE_ZONE.uMin + half, Math.min(SAFE_ZONE.uMax - half, uv.x));
-      uv.y = Math.max(SAFE_ZONE.vMin + half, Math.min(SAFE_ZONE.vMax - half, uv.y));
-      return uv;
-    }, []);
+    const clampToSafeZone = useCallback(
+      (uv: THREE.Vector2, scale: number) => {
+        if (!enforceSafeZone) return uv;
+        const half = scale * 0.5;
+        uv.x = Math.max(SAFE_ZONE.uMin + half, Math.min(SAFE_ZONE.uMax - half, uv.x));
+        uv.y = Math.max(SAFE_ZONE.vMin + half, Math.min(SAFE_ZONE.vMax - half, uv.y));
+        return uv;
+      },
+      [enforceSafeZone]
+    );
 
     const setOrbitEnabled = useCallback(
       (enabled: boolean) => {
