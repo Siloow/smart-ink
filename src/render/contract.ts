@@ -22,6 +22,8 @@ export interface RenderContract {
   lookId: string;
   lighting?: {
     presetName: string;
+    /** Matches LIGHTING_PRESETS[preset].threeIntensityScale in the browser viewport. */
+    intensityScale?: number;
     lights: ContractLight[];
   };
   /** UV-space RGBA ink layer (tattoo only, transparent elsewhere). Uploaded URL or data URL. */

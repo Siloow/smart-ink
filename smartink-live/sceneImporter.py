@@ -55,30 +55,41 @@ OUTPUT_TIERS: Dict[str, Dict[str, int]] = {
     "final": {"samples": 256, "max_dim": 2048},
 }
 
+# Tuned for Cycles preview to approximate the browser Lambert shader (not final Blender truth).
 BLENDER_BASE_ENERGY = {
-    "directional": 400,
-    "spot": 800,
-    "point": 300,
-    "ambient": 0.3,
+    "directional": 4.0,
+    "point": 80,
+    "ambient": 1.0,
 }
-DEFAULT_AREA_SIZE = (2.0, 2.0)
+# Mirrors src/config/lightingPresets.ts threeIntensityScale (fallback when contract omits intensityScale).
+THREE_INTENSITY_SCALE: Dict[str, float] = {
+    "studio": 1.1,
+    "softboxLeft": 1.4,
+    "softboxRight": 1.4,
+    "backlight": 1.6,
+    "dramatic": 2.0,
+    "sunset": 1.2,
+}
+# Hard sun angle — browser shader uses parallel rays (no softbox falloff).
+SUN_ANGLE_RAD = math.radians(2.0)
 
-# Canonical lights per preset (relative intensities, Three.js Y-up positions)
+# Canonical lights per preset (relative intensities, Three.js Y-up positions; mirrors lightingPresets.ts)
 LIGHTING_PRESETS: Dict[str, List[Dict[str, Any]]] = {
     "studio": [
         {"type": "ambient", "position": [0, 0, 0], "intensity": 0.136, "color": "#ffffff", "castShadow": False},
-        {"type": "directional", "position": [8, 6, 8], "target": [0, 0, 0], "intensity": 1.0, "color": "#ffffff", "castShadow": True, "blenderAreaSize": [2, 2]},
-        {"type": "directional", "position": [-6, 2, 4], "target": [0, 0, 0], "intensity": 0.455, "color": "#aaffee", "castShadow": False, "blenderAreaSize": [2, 2]},
+        {"type": "directional", "position": [8, 6, 8], "target": [0, 0, 0], "intensity": 1.0, "color": "#ffffff", "castShadow": True},
+        {"type": "directional", "position": [-6, 2, 4], "target": [0, 0, 0], "intensity": 0.455, "color": "#aaffee", "castShadow": False},
+        {"type": "directional", "position": [0, 8, -8], "target": [0, 0, 0], "intensity": 0.636, "color": "#ffbbaa", "castShadow": False},
     ],
     "softboxLeft": [
-        {"type": "ambient", "position": [0, 0, 0], "intensity": 0.2, "color": "#ffffff", "castShadow": False},
-        {"type": "directional", "position": [-8, 5, 6], "target": [0, 0, 0], "intensity": 1.0, "color": "#fff8f0", "castShadow": True, "blenderAreaSize": [3, 2]},
-        {"type": "directional", "position": [4, 2, 2], "target": [0, 0, 0], "intensity": 0.25, "color": "#cce0ff", "castShadow": False, "blenderAreaSize": [2, 2]},
+        {"type": "ambient", "position": [0, 0, 0], "intensity": 0.086, "color": "#ffffff", "castShadow": False},
+        {"type": "directional", "position": [-10, 8, 5], "target": [0, 0, 0], "intensity": 1.0, "color": "#ffffff", "castShadow": True},
+        {"type": "directional", "position": [8, 2, 8], "target": [0, 0, 0], "intensity": 0.214, "color": "#aaffee", "castShadow": False},
     ],
     "dramatic": [
-        {"type": "ambient", "position": [0, 0, 0], "intensity": 0.05, "color": "#222233", "castShadow": False},
-        {"type": "directional", "position": [0, 4, -8], "target": [0, 0, 0], "intensity": 0.9, "color": "#ffffff", "castShadow": True, "blenderAreaSize": [1.5, 3]},
-        {"type": "directional", "position": [-6, 3, 4], "target": [0, 0, 0], "intensity": 0.35, "color": "#ff8844", "castShadow": False, "blenderAreaSize": [2, 2]},
+        {"type": "ambient", "position": [0, 0, 0], "intensity": 0.025, "color": "#ffffff", "castShadow": False},
+        {"type": "spot", "position": [0, 10, 0], "target": [0, 0, 0], "intensity": 1.0, "color": "#ffffff", "castShadow": True, "angle": 0.3, "penumbra": 0.7},
+        {"type": "directional", "position": [-6, 2, 4], "target": [0, 0, 0], "intensity": 0.15, "color": "#3344ff", "castShadow": False},
     ],
 }
 
@@ -350,8 +361,15 @@ def apply_pose(pose_id: str, body: bpy.types.Object) -> None:
     _ = pose_id, body
 
 
-def apply_world(look_id: str, lights_override: Optional[List[Dict[str, Any]]] = None) -> None:
+def apply_world(
+    look_id: str,
+    lights_override: Optional[List[Dict[str, Any]]] = None,
+    intensity_scale: Optional[float] = None,
+    preset_name: Optional[str] = None,
+) -> None:
     world_def = LOOK_WORLDS.get(look_id, LOOK_WORLDS["studio_softbox"])
+    preset = preset_name or world_def.get("lighting", "studio")
+    scale = intensity_scale if intensity_scale is not None else THREE_INTENSITY_SCALE.get(preset, 1.0)
     world = bpy.context.scene.world
     if not world:
         world = bpy.data.worlds.new("World")
@@ -367,53 +385,56 @@ def apply_world(look_id: str, lights_override: Optional[List[Dict[str, Any]]] = 
     bg.inputs["Strength"].default_value = 1.0
     links.new(bg.outputs["Background"], output.inputs["Surface"])
     if lights_override:
-        setup_lights_from_list(lights_override)
+        setup_lights_from_list(lights_override, scale)
     else:
-        setup_lights(world_def.get("lighting", "studio"))
+        setup_lights(preset, scale)
 
 
-def _ambient_add_to_world(rel_intensity: float, color_hex: str) -> None:
+def _ambient_add_to_world(rel_intensity: float, color_hex: str, intensity_scale: float = 1.0) -> None:
     rgb = hex_to_rgb(color_hex)
-    add = rel_intensity * BLENDER_BASE_ENERGY["ambient"]
+    add = rel_intensity * intensity_scale * BLENDER_BASE_ENERGY["ambient"]
     world = bpy.context.scene.world
     if world and world.use_nodes and world.node_tree:
         for node in world.node_tree.nodes:
             if node.type == "BACKGROUND":
+                cur = node.inputs["Color"].default_value
+                mix = min(1.0, add * 0.35)
+                node.inputs["Color"].default_value = (
+                    cur[0] * (1.0 - mix) + rgb[0] * mix,
+                    cur[1] * (1.0 - mix) + rgb[1] * mix,
+                    cur[2] * (1.0 - mix) + rgb[2] * mix,
+                    1.0,
+                )
                 node.inputs["Strength"].default_value += add
                 return
 
 
-def setup_lights(preset_name: str) -> None:
-    setup_lights_from_list(LIGHTING_PRESETS.get(preset_name, LIGHTING_PRESETS["studio"]))
+def setup_lights(preset_name: str, intensity_scale: float = 1.0) -> None:
+    setup_lights_from_list(
+        LIGHTING_PRESETS.get(preset_name, LIGHTING_PRESETS["studio"]),
+        intensity_scale,
+    )
 
 
-def setup_lights_from_list(lights: List[Dict[str, Any]]) -> None:
+def setup_lights_from_list(lights: List[Dict[str, Any]], intensity_scale: float = 1.0) -> None:
     for light in lights:
         ltype = light.get("type", "point")
         pos = light.get("position", [0, 0, 0])
-        rel_intensity = float(light.get("intensity", 0.5))
+        rel_intensity = float(light.get("intensity", 0.5)) * intensity_scale
         color_hex = light.get("color", "#ffffff")
         rgb = hex_to_rgb(color_hex)
         cast_shadow = light.get("castShadow", True)
 
         if ltype == "ambient":
-            _ambient_add_to_world(rel_intensity, color_hex)
+            _ambient_add_to_world(float(light.get("intensity", 0.5)), color_hex, intensity_scale)
             continue
 
-        if ltype == "directional":
-            bpy.ops.object.light_add(type="AREA")
+        # Browser preview shader treats directional + spot as parallel rays (no area/spot falloff).
+        if ltype in ("directional", "spot"):
+            bpy.ops.object.light_add(type="SUN")
             light_obj = bpy.context.active_object
-            area_size = light.get("blenderAreaSize", DEFAULT_AREA_SIZE)
-            light_obj.data.shape = "RECTANGLE"
-            light_obj.data.size = float(area_size[0])
-            light_obj.data.size_y = float(area_size[1])
+            light_obj.data.angle = SUN_ANGLE_RAD
             base = BLENDER_BASE_ENERGY["directional"]
-        elif ltype == "spot":
-            bpy.ops.object.light_add(type="SPOT")
-            light_obj = bpy.context.active_object
-            light_obj.data.spot_size = float(light.get("angle", 0.5))
-            light_obj.data.spot_blend = float(light.get("penumbra", 0.5))
-            base = BLENDER_BASE_ENERGY["spot"]
         else:
             bpy.ops.object.light_add(type="POINT")
             light_obj = bpy.context.active_object
@@ -584,9 +605,12 @@ def build_scene(contract_path: str) -> str:
     ensure_box_projection_uvs(body)
     apply_skin(body, contract.get("skinToneId", "tone_03"), contract_dir)
     apply_pose(contract.get("poseId", "neutral"), body)
+    lighting = contract.get("lighting") or {}
     apply_world(
         contract.get("lookId", "studio_softbox"),
-        (contract.get("lighting") or {}).get("lights"),
+        lighting.get("lights"),
+        lighting.get("intensityScale"),
+        lighting.get("presetName"),
     )
 
     ink_name = contract.get("inkTextureUrl", "ink.png")
