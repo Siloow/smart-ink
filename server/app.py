@@ -1,7 +1,7 @@
 """
 Local Smart Ink render server — POST /render-v2 (contract + ink_layer).
 
-Writes uploads to ~/smartink-live/ for watch_dev.py, then headless Blender render.
+Writes uploads to smartink-live/ for watch_dev.py, then headless Blender render.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse, JSONResponse
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LIVE_DIR = Path(
-    os.environ.get("SMARTINK_LIVE_DIR", os.path.expanduser("~/smartink-live"))
+    os.environ.get("SMARTINK_LIVE_DIR", REPO_ROOT / "smartink-live")
 ).expanduser()
 RENDER_TIMEOUT_SEC = int(os.environ.get("SMARTINK_RENDER_TIMEOUT", "180"))
 
@@ -129,7 +129,7 @@ async def sync_live(
     contract: UploadFile = File(...),
     ink_layer: UploadFile = File(...),
 ) -> JSONResponse:
-    """Write contract + ink to ~/smartink-live for watch_dev.py (no Cycles render)."""
+    """Write contract + ink to smartink-live for watch_dev.py (no Cycles render)."""
     contract_bytes, ink_bytes = await _read_shot_uploads(contract, ink_layer)
     contract_path = dump_to_live_dir(contract_bytes, ink_bytes)
     print(f"[render-server] sync-live → {contract_path}", file=sys.stderr)

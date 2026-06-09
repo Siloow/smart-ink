@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
-# Local render server: /health + /render-v2 → ~/smartink-live + Blender PNG
+# Local render server: /health + /render-v2 → smartink-live/ + Blender PNG
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 VENV="$ROOT/server/.venv"
+
+bash "$ROOT/tools/setup-smartink-live.sh"
 
 if [[ ! -d "$VENV" ]]; then
   python3 -m venv "$VENV"
   "$VENV/bin/pip" install -r "$ROOT/server/requirements.txt"
 fi
 
-export SMARTINK_LIVE_DIR="${SMARTINK_LIVE_DIR:-$HOME/smartink-live}"
+export SMARTINK_LIVE_DIR="${SMARTINK_LIVE_DIR:-$ROOT/smartink-live}"
 if [[ -z "${BLENDER:-}" && -x /Applications/Blender.app/Contents/MacOS/Blender ]]; then
   export BLENDER=/Applications/Blender.app/Contents/MacOS/Blender
 fi

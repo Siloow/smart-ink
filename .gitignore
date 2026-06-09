@@ -23,3 +23,13 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Blender live workspace — runtime artifacts only (static assets are tracked)
+smartink-live/contract.json
+smartink-live/ink.png
+smartink-live/ink_uvtest.png
+smartink-live/renders/*
+!smartink-live/renders/.gitkeep
+smartink-live/__pycache__/
+smartink-live/**/*.pyc
+smartink-live/*.zip
