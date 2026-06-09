@@ -1,7 +1,18 @@
-import { useEffect, useRef } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import { OrbitControls } from '@react-three/drei';
 import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
+
+export interface CameraSnapshot {
+  position: [number, number, number];
+  target: [number, number, number];
+  fov: number;
+  aspect: number;
+}
+
+export interface OrbitControlsHandle {
+  getSnapshot: () => CameraSnapshot;
+}
 
 interface Props {
   cameraState: {
@@ -12,9 +23,34 @@ interface Props {
   setCameraState: (state: { position: [number, number, number]; target: [number, number, number]; fov: number }) => void;
 }
 
-export default function OrbitControlsWithCmdLock({ cameraState, setCameraState }: Props) {
-  const controlsRef = useRef<any>(null);
-  const { camera } = useThree();
+const OrbitControlsWithCmdLock = forwardRef<OrbitControlsHandle, Props>(function OrbitControlsWithCmdLock(
+  { cameraState, setCameraState },
+  ref
+) {
+  const controlsRef = useRef<React.ElementRef<typeof OrbitControls>>(null);
+  const { camera, gl } = useThree();
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      getSnapshot: (): CameraSnapshot => {
+        const persp = camera as THREE.PerspectiveCamera;
+        const controls = controlsRef.current;
+        const canvas = gl.domElement;
+        const aspect =
+          canvas.clientHeight > 0 ? canvas.clientWidth / canvas.clientHeight : persp.aspect;
+        return {
+          position: [camera.position.x, camera.position.y, camera.position.z],
+          target: controls
+            ? [controls.target.x, controls.target.y, controls.target.z]
+            : cameraState.target,
+          fov: persp.isPerspectiveCamera ? persp.fov : 45,
+          aspect,
+        };
+      },
+    }),
+    [camera, gl, cameraState.target]
+  );
 
   useEffect(() => {
     camera.position.set(...cameraState.position);
@@ -48,7 +84,6 @@ export default function OrbitControlsWithCmdLock({ cameraState, setCameraState }
     };
   }, []);
 
-  // Listen for camera/controls changes and update state
   useEffect(() => {
     if (!controlsRef.current) return;
     const controls = controlsRef.current;
@@ -64,4 +99,6 @@ export default function OrbitControlsWithCmdLock({ cameraState, setCameraState }
   }, [setCameraState, camera]);
 
   return <OrbitControls ref={controlsRef} />;
-} 
+});
+
+export default OrbitControlsWithCmdLock;

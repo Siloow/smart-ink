@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Canvas, useThree } from '@react-three/fiber'
 // import { OrbitControls } from '@react-three/drei'
-import OrbitControlsWithCmdLock from './OrbitControlsWithCmdLock'
+import OrbitControlsWithCmdLock, { type OrbitControlsHandle } from './OrbitControlsWithCmdLock'
 import ModelWithUVTattoo, { type ModelWithUVTattooHandle } from './ModelWithUVTattoo'
 import CinematicLights from './CinematicLights'
 import TopMenuBar from './TopMenuBar'
@@ -113,8 +113,9 @@ function App() {
   const [skinToneId, setSkinToneId] = useState('tone_03')
   const [poseId, setPoseId] = useState('neutral')
   const [lookId, setLookId] = useState('studio_softbox')
-  const [qualityTier, setQualityTier] = useState<'preview' | 'final'>('final')
+  const [qualityTier, setQualityTier] = useState<'preview' | 'final'>('preview')
   const uvPlacementRef = useRef<ModelWithUVTattooHandle>(null)
+  const orbitControlsRef = useRef<OrbitControlsHandle>(null)
 
   // Export state
   const [showExportModal, setShowExportModal] = useState(false)
@@ -180,15 +181,28 @@ function App() {
       rotationRad: placement.rotationRad,
     })
 
-    const canvas = threeRenderer?.domElement
-    const aspect = canvas && canvas.clientHeight > 0 ? canvas.clientWidth / canvas.clientHeight : 1
-    const outHeight = Math.max(1, Math.round(2048 / aspect))
+    const snap = orbitControlsRef.current?.getSnapshot() ?? {
+      position: cameraState.position,
+      target: cameraState.target,
+      fov: cameraState.fov,
+      aspect:
+        threeRenderer?.domElement && threeRenderer.domElement.clientHeight > 0
+          ? threeRenderer.domElement.clientWidth / threeRenderer.domElement.clientHeight
+          : 1,
+    }
+    const baseWidth = qualityTier === 'preview' ? 512 : 2048
+    const outHeight = Math.max(1, Math.round(baseWidth / snap.aspect))
 
     const contract = buildRenderContract(
       { bodyMeshId, skinToneId, poseId, lookId, qualityTier },
-      { position: cameraState.position, target: cameraState.target, fov: cameraState.fov, aspect },
+      {
+        position: snap.position,
+        target: snap.target,
+        fov: snap.fov,
+        aspect: snap.aspect,
+      },
       'ink.png',
-      { width: 2048, height: outHeight },
+      { width: baseWidth, height: outHeight },
     )
     return { contract, inkBlob }
   }, [uploadedImage, bodyMeshId, skinToneId, poseId, lookId, qualityTier, cameraState, threeRenderer])
@@ -620,6 +634,7 @@ function App() {
           showSafeZone={true}
         />
         <OrbitControlsWithCmdLock
+          ref={orbitControlsRef}
           cameraState={cameraState}
           setCameraState={setCameraState}
         />
@@ -718,6 +733,23 @@ function App() {
             </div>
 
             <div className="modal-blender-divider" />
+            <label className="modal-label" htmlFor="quality-tier">
+              Blender output quality
+            </label>
+            <select
+              id="quality-tier"
+              className="modal-select"
+              style={{ marginBottom: 16 }}
+              value={qualityTier}
+              onChange={(e) => setQualityTier(e.target.value as 'preview' | 'final')}
+            >
+              {REGISTRY.outputTiers.map((tier) => (
+                <option key={tier.id} value={tier.id}>
+                  {tier.label} ({tier.samples} samples{tier.id === 'preview' ? ', 512px max' : ', full res'})
+                </option>
+              ))}
+            </select>
+
             <h3 className="modal-blender-title">Export for Blender</h3>
             <p className="modal-blender-desc">
               Download scene data and the Blender script to render this view in Blender (Cycles) for high-quality output.
@@ -787,7 +819,10 @@ function App() {
             <div className="modal-blender-divider" />
             <h3 className="modal-blender-title">Cloud Render (Cycles)</h3>
             <p className="modal-blender-desc">
-              Render this scene with Blender Cycles ({getRenderTargetLabel()} server). Returns a photorealistic image in 15-60 seconds.
+              Render with Blender Cycles ({getRenderTargetLabel()} server).
+              {qualityTier === 'preview'
+                ? ' Fast preview — low samples, ~512px; good for iteration.'
+                : ' Final quality — full resolution; slower on local CPU.'}
             </p>
             {renderServerOnline !== null && (
               <p style={{ fontSize: '13px', marginBottom: '8px' }}>

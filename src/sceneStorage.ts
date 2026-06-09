@@ -15,7 +15,7 @@ export function migrateScene(s: SceneData): SceneData {
     skinToneId: s.skinToneId ?? 'tone_03',
     poseId: s.poseId ?? 'neutral',
     lookId: s.lookId ?? 'studio_softbox',
-    qualityTier: s.qualityTier ?? 'final',
+    qualityTier: s.qualityTier ?? 'preview',
   };
 }
 

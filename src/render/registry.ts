@@ -90,7 +90,7 @@ export const REGISTRY = {
   ] as LookDef[],
 
   outputTiers: [
-    { id: 'preview', label: 'Fast preview', samples: 64 },
+    { id: 'preview', label: 'Fast preview', samples: 16 },
     { id: 'final', label: 'Final', samples: 256 },
   ] as OutputTierDef[],
 };
