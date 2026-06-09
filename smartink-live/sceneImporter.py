@@ -35,6 +35,14 @@ SKIN_TONES: Dict[str, Tuple[float, float, float]] = {
     "tone_07": (0.420, 0.263, 0.153),  # #6b4327
 }
 
+# skinToneId -> material name in skins.blend (mirrors registry.ts serverShader)
+SKIN_SHADERS: Dict[str, str] = {
+    "tone_01": "skin_fair",
+    "tone_03": "skin_medium",
+    "tone_05": "skin_tan",
+    "tone_07": "skin_deep",
+}
+
 # lookId -> preview background + lighting preset name (matches Three.js presets)
 LOOK_WORLDS: Dict[str, Dict[str, Any]] = {
     "studio_softbox": {"bg": "#ffffff", "lighting": "studio"},
@@ -261,7 +269,58 @@ def ensure_box_projection_uvs(obj: bpy.types.Object) -> None:
             uv_data[loop_idx].uv = (u, v)
 
 
-def apply_skin(body: bpy.types.Object, skin_tone_id: str) -> None:
+def _resolve_skins_blend(contract_dir: str) -> Optional[str]:
+    """Find skins.blend: <contract_dir>/assets, <contract_dir>, or script-relative assets."""
+    candidates = []
+    if contract_dir:
+        candidates.append(os.path.join(contract_dir, "assets", "skins.blend"))
+        candidates.append(os.path.join(contract_dir, "skins.blend"))
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    candidates.append(os.path.join(script_dir, "assets", "skins.blend"))
+    for c in candidates:
+        if os.path.exists(c):
+            return os.path.abspath(c)
+    return None
+
+
+def _load_skin_material(skin_tone_id: str, contract_dir: str) -> Optional[bpy.types.Material]:
+    """Append the skin material for a tone from skins.blend. Returns it, or None to fall back."""
+    mat_name = SKIN_SHADERS.get(skin_tone_id, SKIN_SHADERS["tone_03"])
+    blend_path = _resolve_skins_blend(contract_dir)
+    if not blend_path:
+        print(f"skins.blend not found; procedural skin for {skin_tone_id}.")
+        return None
+    before = set(bpy.data.materials.keys())
+    try:
+        with bpy.data.libraries.load(blend_path, link=False) as (src, dst):
+            if mat_name not in src.materials:
+                print(f"Material '{mat_name}' not in {blend_path}. Found: {list(src.materials)}")
+                return None
+            dst.materials = [mat_name]
+    except Exception as exc:
+        print(f"Failed to load {blend_path}: {exc}")
+        return None
+    new_names = set(bpy.data.materials.keys()) - before
+    mat = bpy.data.materials[next(iter(new_names))] if new_names else bpy.data.materials.get(mat_name)
+    if mat:
+        print(f"Loaded skin material '{mat_name}' from {blend_path}")
+    return mat
+
+
+def apply_skin(body: bpy.types.Object, skin_tone_id: str, contract_dir: str = "") -> None:
+    """Prefer a material authored in skins.blend; fall back to the procedural shader."""
+    mat = _load_skin_material(skin_tone_id, contract_dir)
+    if mat is None:
+        _apply_skin_procedural(body, skin_tone_id)
+        return
+    if body.data.materials:
+        body.data.materials[0] = mat
+    else:
+        body.data.materials.append(mat)
+
+
+def _apply_skin_procedural(body: bpy.types.Object, skin_tone_id: str) -> None:
+    """Fallback: build a flat PBR skin shader from the SKIN_TONES table (previous behavior)."""
     rgb = SKIN_TONES.get(skin_tone_id, SKIN_TONES["tone_03"])
     mat = bpy.data.materials.new(name="Skin")
     mat.use_nodes = True
@@ -513,7 +572,7 @@ def build_scene(contract_path: str) -> str:
 
     center_body_at_origin(body)
     ensure_box_projection_uvs(body)
-    apply_skin(body, contract.get("skinToneId", "tone_03"))
+    apply_skin(body, contract.get("skinToneId", "tone_03"), contract_dir)
     apply_pose(contract.get("poseId", "neutral"), body)
     apply_world(contract.get("lookId", "studio_softbox"))
 
