@@ -26,6 +26,8 @@ import { buildRenderContract } from './render/buildContract'
 import type { RenderContract } from './render/contract'
 import { REGISTRY, findById } from './render/registry'
 import { migrateScene } from './sceneStorage'
+import { addRenderHistory } from './renderHistoryStorage'
+import RenderHistoryModal from './RenderHistoryModal'
 import * as THREE from 'three'
 
 function previewModelForBody(bodyMeshId: string): 'Monk' | 'FinalBaseMesh' {
@@ -113,6 +115,7 @@ function App() {
 
   // Export state
   const [showExportModal, setShowExportModal] = useState(false)
+  const [showRenderHistory, setShowRenderHistory] = useState(false)
   const [exportPreset, setExportPreset] = useState('instagram')
   const [watermarkText, setWatermarkText] = useState('SMART INK')
   const [watermarkEnabled, setWatermarkEnabled] = useState(true)
@@ -428,6 +431,17 @@ function App() {
       // Convert to blob and download
       finalCanvas.toBlob((blob) => {
         if (blob) {
+          void addRenderHistory(
+            {
+              source: 'canvas',
+              width,
+              height,
+              exportPreset,
+              sceneName: currentScene?.name,
+              lookId,
+            },
+            blob
+          )
           const url = URL.createObjectURL(blob)
           const a = document.createElement('a')
           a.href = url
@@ -503,6 +517,18 @@ function App() {
       if (!shot) return
       const imageUrl = await renderContract(shot.contract, shot.inkBlob, { onStatusChange })
       setCloudRenderImage(imageUrl)
+      const renderBlob = await fetch(imageUrl).then((r) => r.blob())
+      await addRenderHistory(
+        {
+          source: 'cycles',
+          width: shot.contract.output.width,
+          height: shot.contract.output.height,
+          qualityTier: shot.contract.output.qualityTier,
+          lookId: shot.contract.lookId,
+          sceneName: currentScene?.name,
+        },
+        renderBlob
+      )
     } catch (e) {
       console.error('Render failed:', e)
       setCloudRenderStatus('error')
@@ -510,17 +536,21 @@ function App() {
     }
   }
 
-  // Exit photo mode on Escape
+  // Exit photo mode / modals on Escape
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        if (showRenderHistory) {
+          setShowRenderHistory(false)
+          return
+        }
         setPhotoMode(false)
         setShowExportModal(false)
       }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [])
+  }, [showRenderHistory])
 
   if (showLandingPage) {
     return (
@@ -704,7 +734,16 @@ function App() {
       {showExportModal && (
         <div className="modal-overlay" role="dialog" aria-labelledby="export-title">
           <div className="modal-card">
-            <h2 id="export-title">Export image</h2>
+            <div className="render-history-header">
+              <h2 id="export-title">Export image</h2>
+              <button
+                type="button"
+                className="btn-modal-cancel"
+                onClick={() => setShowRenderHistory(true)}
+              >
+                Render history
+              </button>
+            </div>
             <label className="modal-label" htmlFor="export-preset">
               Format
             </label>
@@ -920,6 +959,10 @@ function App() {
             )}
           </div>
         </div>
+      )}
+
+      {showRenderHistory && (
+        <RenderHistoryModal onClose={() => setShowRenderHistory(false)} />
       )}
 
     </div>

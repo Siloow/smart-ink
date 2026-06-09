@@ -22,7 +22,7 @@ export function buildRenderContract(
   shot: ShotState,
   inkTextureUrl: string,
   dims: { width: number; height: number },
-  lighting?: { presetName: string; lights: ContractLight[] }
+  lighting?: { presetName: string; intensityScale?: number; lights: ContractLight[] }
 ): RenderContract {
   return {
     schemaVersion: RENDER_SCHEMA_VERSION,
