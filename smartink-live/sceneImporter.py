@@ -333,8 +333,12 @@ def _apply_skin_procedural(body: bpy.types.Object, skin_tone_id: str) -> None:
     bsdf.inputs["Base Color"].default_value = (*rgb, 1.0)
     bsdf.inputs["Subsurface Weight"].default_value = 0.3
     bsdf.inputs["Subsurface Radius"].default_value = (1.0, 0.2, 0.1)
-    bsdf.inputs["Roughness"].default_value = 0.4
+    bsdf.inputs["Roughness"].default_value = 0.62
     bsdf.inputs["Metallic"].default_value = 0.0
+    if "Specular IOR Level" in bsdf.inputs:
+        bsdf.inputs["Specular IOR Level"].default_value = 0.22
+    if "Diffuse Roughness" in bsdf.inputs:
+        bsdf.inputs["Diffuse Roughness"].default_value = 0.28
     if body.data.materials:
         body.data.materials[0] = mat
     else:
