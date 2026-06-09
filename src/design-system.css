@@ -998,6 +998,140 @@ body {
   margin: 0;
 }
 
+/* ——— Render history modal ——— */
+.render-history-overlay {
+  z-index: 1100;
+}
+
+.render-history-card {
+  max-width: 920px;
+}
+
+.render-history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.render-history-header h2 {
+  margin-bottom: 0;
+  text-align: left;
+}
+
+.render-history-desc {
+  color: var(--text-secondary);
+  font-size: 0.88rem;
+  margin-bottom: 16px;
+}
+
+.render-history-empty,
+.render-history-error {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  text-align: center;
+  padding: 24px 0;
+}
+
+.render-history-error {
+  color: var(--red-500, #ef4444);
+}
+
+.render-history-preview {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  margin-bottom: 16px;
+  background: var(--bg-input);
+}
+
+.render-history-preview img {
+  width: 100%;
+  max-height: 360px;
+  object-fit: contain;
+  display: block;
+  background: #111;
+}
+
+.render-history-preview-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 12px 14px;
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.render-history-preview-meta strong {
+  color: var(--text-primary);
+  margin-right: 8px;
+}
+
+.render-history-preview-actions {
+  display: flex;
+  gap: 10px;
+  padding: 0 14px 14px;
+}
+
+.render-history-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.render-history-thumb {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+  cursor: pointer;
+  overflow: hidden;
+  text-align: left;
+}
+
+.render-history-thumb:hover {
+  border-color: var(--border-color);
+}
+
+.render-history-thumb--active {
+  border-color: var(--accent-blue);
+}
+
+.render-history-thumb img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  display: block;
+}
+
+.render-history-thumb-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1;
+  color: var(--text-muted);
+}
+
+.render-history-thumb-label {
+  padding: 0 8px 8px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  line-height: 1.3;
+}
+
+.render-history-footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .modal-blender-hint code {
   background: var(--bg-input);
   padding: 2px 6px;
