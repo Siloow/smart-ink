@@ -1,6 +1,9 @@
 import { useRef } from 'react';
 import { FaUpload, FaUndo, FaRegImage } from 'react-icons/fa';
 import CharacterBuilderSections from './CharacterBuilderSections';
+import LightingControls from './LightingControls';
+import type { LightDefinition, LightingPresetKey } from './config/lightingPresets';
+import { resolveRig } from './config/lightingPresets';
 
 interface TopMenuBarProps {
   bodyMeshId: string;
@@ -32,6 +35,11 @@ interface TopMenuBarProps {
   performanceMode: boolean;
   setPerformanceMode: (v: boolean) => void;
   onExport: () => void;
+  lights: LightDefinition[];
+  selectedLight: number | null;
+  lightingPreset: LightingPresetKey;
+  onSelectLight: (i: number) => void;
+  onLightsChange: (lights: LightDefinition[]) => void;
 }
 
 const TATTOO_COLORS = [
@@ -81,6 +89,11 @@ export default function TopMenuBar({
   performanceMode,
   setPerformanceMode,
   onExport,
+  lights,
+  selectedLight,
+  lightingPreset,
+  onSelectLight,
+  onLightsChange,
 }: TopMenuBarProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -118,6 +131,16 @@ export default function TopMenuBar({
           onPoseChange={onPoseChange}
           onLookChange={onLookChange}
         />
+
+        <section className="ep-section">
+          <LightingControls
+            lights={lights}
+            selectedIndex={selectedLight}
+            onSelectLight={onSelectLight}
+            onChange={onLightsChange}
+            onReset={() => onLightsChange(resolveRig(lightingPreset))}
+          />
+        </section>
 
         <section className="ep-section">
           <p className="ep-section-label">Tattoo</p>

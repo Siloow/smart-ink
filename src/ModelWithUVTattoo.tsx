@@ -13,22 +13,29 @@ import * as THREE from 'three';
 import { TextureLoader } from 'three';
 import { TATTOO_LAYER_GLSL } from './render/tattooLayer';
 import { findById, REGISTRY } from './render/registry';
+import type { LightDefinition } from './config/lightingPresets';
 
 const SAFE_ZONE = { uMin: 0.05, uMax: 0.95, vMin: 0.08, vMax: 0.92 };
+const MAX_SCENE_LIGHTS = 4;
 
 const vertexShader = `
   varying vec2 vUv;
-  varying vec3 vNormal;
+  varying vec3 vWorldNormal;
+  varying vec3 vWorldPosition;
 
   void main() {
     vUv = uv;
-    vNormal = normalize(normalMatrix * normal);
+    vec4 worldPos = modelMatrix * vec4(position, 1.0);
+    vWorldPosition = worldPos.xyz;
+    vWorldNormal = normalize(mat3(modelMatrix) * normal);
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }
 `;
 
 const fragmentShader = `
   ${TATTOO_LAYER_GLSL}
+
+  #define MAX_SCENE_LIGHTS ${MAX_SCENE_LIGHTS}
 
   uniform sampler2D skinTexture;
   uniform sampler2D tattooTexture;
@@ -38,18 +45,46 @@ const fragmentShader = `
   uniform float tattooVisible;
   uniform float showSafeZone;
   uniform vec4 safeZoneBounds;
+  uniform vec3 uAmbientColor;
+  uniform float uAmbientStrength;
+  uniform int uNumLights;
+  uniform vec3 uLightPos[MAX_SCENE_LIGHTS];
+  uniform vec3 uLightTarget[MAX_SCENE_LIGHTS];
+  uniform vec3 uLightColor[MAX_SCENE_LIGHTS];
+  uniform float uLightIntensity[MAX_SCENE_LIGHTS];
+  uniform float uLightIsPoint[MAX_SCENE_LIGHTS];
 
   varying vec2 vUv;
-  varying vec3 vNormal;
+  varying vec3 vWorldNormal;
+  varying vec3 vWorldPosition;
+
+  vec3 shadeSkin(vec3 albedo) {
+    vec3 N = normalize(vWorldNormal);
+    vec3 lit = albedo * uAmbientColor * uAmbientStrength;
+
+    for (int i = 0; i < MAX_SCENE_LIGHTS; i++) {
+      if (i >= uNumLights) break;
+      vec3 L;
+      float atten = 1.0;
+      if (uLightIsPoint[i] > 0.5) {
+        vec3 toLight = uLightPos[i] - vWorldPosition;
+        float dist = length(toLight);
+        L = toLight / max(dist, 0.0001);
+        atten = 1.0 / (1.0 + dist * dist * 0.02);
+      } else {
+        L = normalize(uLightPos[i] - uLightTarget[i]);
+      }
+      float diff = max(dot(N, L), 0.0);
+      lit += albedo * uLightColor[i] * uLightIntensity[i] * diff * atten;
+    }
+
+    return lit;
+  }
 
   void main() {
     vec4 skin = texture2D(skinTexture, vUv);
-
-    vec3 lightDir = normalize(vec3(0.5, 1.0, 0.8));
-    float diff = max(dot(normalize(vNormal), lightDir), 0.0);
-    float ambient = 0.35;
-    float light = ambient + diff * 0.65;
-    skin.rgb *= light;
+    vec3 litRgb = shadeSkin(skin.rgb);
+    skin.rgb = litRgb;
 
     if (showSafeZone > 0.5) {
       bool inSafe = vUv.x >= safeZoneBounds.x && vUv.x <= safeZoneBounds.y &&
@@ -65,7 +100,7 @@ const fragmentShader = `
       );
       if (tattooLayer.a > 0.0) {
         vec3 tattooRgb = tattooLayer.rgb * 0.85;
-        skin.rgb = mix(skin.rgb, tattooRgb * light, tattooLayer.a);
+        skin.rgb = mix(skin.rgb, shadeSkin(tattooRgb), tattooLayer.a);
       }
     }
 
@@ -137,6 +172,9 @@ interface ModelWithUVTattooProps {
   decalOpacity: number;
   setDecalVisible: (visible: boolean) => void;
   showSafeZone?: boolean;
+  lights?: LightDefinition[];
+  intensityScale?: number;
+  performanceMode?: boolean;
 }
 
 const ModelWithUVTattoo = forwardRef<ModelWithUVTattooHandle, ModelWithUVTattooProps>(
@@ -149,6 +187,9 @@ const ModelWithUVTattoo = forwardRef<ModelWithUVTattooHandle, ModelWithUVTattooP
       decalScale,
       setDecalVisible,
       showSafeZone = true,
+      lights = [],
+      intensityScale = 1,
+      performanceMode = false,
     },
     ref
   ) {
@@ -207,6 +248,20 @@ const ModelWithUVTattoo = forwardRef<ModelWithUVTattooHandle, ModelWithUVTattooP
                 SAFE_ZONE.vMax
               ),
             },
+            uAmbientColor: { value: new THREE.Color('#ffffff') },
+            uAmbientStrength: { value: 0.35 },
+            uNumLights: { value: 0 },
+            uLightPos: {
+              value: Array.from({ length: MAX_SCENE_LIGHTS }, () => new THREE.Vector3()),
+            },
+            uLightTarget: {
+              value: Array.from({ length: MAX_SCENE_LIGHTS }, () => new THREE.Vector3()),
+            },
+            uLightColor: {
+              value: Array.from({ length: MAX_SCENE_LIGHTS }, () => new THREE.Color('#ffffff')),
+            },
+            uLightIntensity: { value: new Array<number>(MAX_SCENE_LIGHTS).fill(0) },
+            uLightIsPoint: { value: new Array<number>(MAX_SCENE_LIGHTS).fill(0) },
           },
           side: THREE.DoubleSide,
         }),
@@ -234,6 +289,45 @@ const ModelWithUVTattoo = forwardRef<ModelWithUVTattooHandle, ModelWithUVTattooP
       shaderMaterial.uniforms.tattooRotation.value = THREE.MathUtils.degToRad(decalRotation);
       shaderMaterial.uniforms.tattooVisible.value = hasPlacedRef.current ? 1.0 : 0.0;
       shaderMaterial.uniforms.showSafeZone.value = showSafeZone ? 1.0 : 0.0;
+
+      const perf = performanceMode ? 0.5 : 1;
+      let ambientStrength = 0;
+      const ambientColor = new THREE.Color(0, 0, 0);
+      let lightCount = 0;
+
+      for (const light of lights) {
+        if (light.type === 'ambient') {
+          const strength = light.intensity * intensityScale * perf;
+          ambientStrength += strength;
+          ambientColor.r += new THREE.Color(light.color).r * strength;
+          ambientColor.g += new THREE.Color(light.color).g * strength;
+          ambientColor.b += new THREE.Color(light.color).b * strength;
+          continue;
+        }
+        if (lightCount >= MAX_SCENE_LIGHTS) break;
+
+        const pos = shaderMaterial.uniforms.uLightPos.value[lightCount] as THREE.Vector3;
+        const target = shaderMaterial.uniforms.uLightTarget.value[lightCount] as THREE.Vector3;
+        const color = shaderMaterial.uniforms.uLightColor.value[lightCount] as THREE.Color;
+        pos.set(light.position[0], light.position[1], light.position[2]);
+        const t = light.target ?? [0, 0, 0];
+        target.set(t[0], t[1], t[2]);
+        color.set(light.color);
+        shaderMaterial.uniforms.uLightIntensity.value[lightCount] =
+          light.intensity * intensityScale * perf;
+        shaderMaterial.uniforms.uLightIsPoint.value[lightCount] = light.type === 'point' ? 1 : 0;
+        lightCount += 1;
+      }
+
+      if (ambientStrength > 0) {
+        ambientColor.multiplyScalar(1 / ambientStrength);
+      } else {
+        ambientColor.set('#ffffff');
+      }
+
+      shaderMaterial.uniforms.uAmbientStrength.value = ambientStrength;
+      shaderMaterial.uniforms.uAmbientColor.value.copy(ambientColor);
+      shaderMaterial.uniforms.uNumLights.value = lightCount;
     });
 
     useEffect(() => {

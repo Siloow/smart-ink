@@ -4,6 +4,7 @@ import { Canvas, useThree } from '@react-three/fiber'
 import OrbitControlsWithCmdLock, { type OrbitControlsHandle } from './OrbitControlsWithCmdLock'
 import ModelWithUVTattoo, { type ModelWithUVTattooHandle } from './ModelWithUVTattoo'
 import CinematicLights from './CinematicLights'
+import LightHandles from './LightHandles'
 import TopMenuBar from './TopMenuBar'
 import ScenesDashboard from './ScenesDashboard'
 import LandingPage from './LandingPage'
@@ -12,7 +13,7 @@ import EditorLeftPanel from './EditorLeftPanel'
 import type { SceneData } from './types'
 import { updateScene } from './sceneStorage'
 import { downloadFiles } from './utils/sceneExporter'
-import type { LightingPresetKey } from './config/lightingPresets'
+import { LIGHTING_PRESETS, resolveRig, type LightingPresetKey, type LightDefinition } from './config/lightingPresets'
 import {
   renderContract,
   syncToLiveWatcher,
@@ -95,6 +96,8 @@ function App() {
   const [photoMode, setPhotoMode] = useState(false)
   const [background, setBackground] = useState<BgKey>('white')
   const [lightingPreset, setLightingPreset] = useState<LightingPresetKey>('studio')
+  const [lights, setLights] = useState<LightDefinition[]>(() => resolveRig('studio'))
+  const [selectedLight, setSelectedLight] = useState<number | null>(null)
   const [cameraPreset, setCameraPreset] = useState<CameraPresetKey>('threeQuarter')
   const [decalPosition, setDecalPosition] = useState<[number, number, number] | null>(null)
   const [decalNormal, setDecalNormal] = useState<[number, number, number] | null>(null)
@@ -194,9 +197,10 @@ function App() {
       },
       'ink.png',
       { width: baseWidth, height: outHeight },
+      { presetName: lightingPreset, lights },
     )
     return { contract, inkBlob }
-  }, [uploadedImage, bodyMeshId, skinToneId, poseId, lookId, qualityTier, cameraState, threeRenderer])
+  }, [uploadedImage, bodyMeshId, skinToneId, poseId, lookId, qualityTier, cameraState, threeRenderer, lightingPreset, lights])
 
   const handleLookChange = useCallback((id: string) => {
     setLookId(id)
@@ -204,6 +208,8 @@ function App() {
     if (look) {
       setLightingPreset(look.previewLighting)
       setBackground(look.previewBackground as BgKey)
+      setLights(resolveRig(look.previewLighting))
+      setSelectedLight(null)
     }
   }, [])
 
@@ -221,6 +227,8 @@ function App() {
     if (look) {
       setLightingPreset(look.previewLighting)
       setBackground(look.previewBackground as BgKey)
+      setLights(resolveRig(look.previewLighting))
+      setSelectedLight(null)
     }
     setDecalRotation(migrated.decalRotation)
     setDecalScale(migrated.decalScale)
@@ -230,7 +238,10 @@ function App() {
     setDecalNormal(migrated.decalNormal ?? null)
     if (!look) {
       setBackground(migrated.background as BgKey)
-      setLightingPreset(migrated.lightingPreset as LightingPresetKey)
+      const preset = migrated.lightingPreset as LightingPresetKey
+      setLightingPreset(preset)
+      setLights(resolveRig(preset))
+      setSelectedLight(null)
     }
     setShowDashboard(false)
     setCameraState(migrated.camera ?? CAMERA_PRESETS.threeQuarter)
@@ -611,7 +622,14 @@ function App() {
               gl={{ preserveDrawingBuffer: true, antialias: true }}
             >
         <ExportRenderer onRendererReady={handleRendererReady} />
-        <CinematicLights key={lightingPreset} preset={lightingPreset} performanceMode={performanceMode} />
+        <CinematicLights
+          key={lightingPreset}
+          preset={lightingPreset}
+          lights={lights}
+          scale={LIGHTING_PRESETS[lightingPreset].threeIntensityScale}
+          performanceMode={performanceMode}
+        />
+        <LightHandles lights={lights} selectedIndex={selectedLight} onSelect={setSelectedLight} />
         <ModelWithUVTattoo
           ref={uvPlacementRef}
           key={`uv-${model}`}
@@ -624,6 +642,9 @@ function App() {
           decalOpacity={decalOpacity}
           setDecalVisible={setDecalVisible}
           showSafeZone={true}
+          lights={lights}
+          intensityScale={LIGHTING_PRESETS[lightingPreset].threeIntensityScale}
+          performanceMode={performanceMode}
         />
         <OrbitControlsWithCmdLock
           ref={orbitControlsRef}
@@ -639,6 +660,11 @@ function App() {
           skinToneId={skinToneId}
           poseId={poseId}
           lookId={lookId}
+          lights={lights}
+          selectedLight={selectedLight}
+          lightingPreset={lightingPreset}
+          onSelectLight={setSelectedLight}
+          onLightsChange={setLights}
           onBodyChange={(id) => {
             setBodyMeshId(id)
             setModel(previewModelForBody(id))
