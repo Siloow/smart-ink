@@ -626,6 +626,7 @@ function App() {
           key={`uv-${model}`}
           uploadedImage={uploadedImage}
           model={model}
+          skinToneId={skinToneId}
           decalRotation={decalRotation}
           decalScale={decalScale}
           decalColor={decalColor}
@@ -674,6 +675,9 @@ function App() {
           lookId={lookId}
           onLookChange={handleLookChange}
           LOOKS={REGISTRY.looks}
+          skinToneId={skinToneId}
+          onSkinToneChange={setSkinToneId}
+          SKIN_TONES={REGISTRY.skinTones}
         />
       </div>
 

@@ -12,6 +12,7 @@ import { GLTFLoader, OBJLoader } from 'three-stdlib';
 import * as THREE from 'three';
 import { TextureLoader } from 'three';
 import { TATTOO_LAYER_GLSL } from './render/tattooLayer';
+import { findById, REGISTRY } from './render/registry';
 
 const SAFE_ZONE = { uMin: 0.05, uMax: 0.95, vMin: 0.08, vMax: 0.92 };
 
@@ -92,13 +93,13 @@ function ensureUVs(geometry: THREE.BufferGeometry): void {
   geometry.setAttribute('uv', new THREE.BufferAttribute(uvArray, 2));
 }
 
-function createSkinTexture(): THREE.CanvasTexture {
+function createSkinTexture(hexColor: string): THREE.CanvasTexture {
   const size = 1024;
   const canvas = document.createElement('canvas');
   canvas.width = size;
   canvas.height = size;
   const ctx = canvas.getContext('2d')!;
-  ctx.fillStyle = '#d4a574';
+  ctx.fillStyle = hexColor;
   ctx.fillRect(0, 0, size, size);
   const imgData = ctx.getImageData(0, 0, size, size);
   for (let i = 0; i < imgData.data.length; i += 4) {
@@ -129,6 +130,7 @@ export interface ModelWithUVTattooHandle {
 interface ModelWithUVTattooProps {
   uploadedImage: string | null;
   model: ModelType;
+  skinToneId: string;
   decalRotation: number;
   decalScale: number;
   decalColor: string;
@@ -142,6 +144,7 @@ const ModelWithUVTattoo = forwardRef<ModelWithUVTattooHandle, ModelWithUVTattooP
     {
       uploadedImage,
       model,
+      skinToneId,
       decalRotation,
       decalScale,
       setDecalVisible,
@@ -165,7 +168,9 @@ const ModelWithUVTattoo = forwardRef<ModelWithUVTattooHandle, ModelWithUVTattooP
     const monkGltf = useLoader(GLTFLoader, '/monk.glb');
     const baseObj = useLoader(OBJLoader, '/FinalBaseMesh.obj');
 
-    const skinTexture = useMemo(() => createSkinTexture(), []);
+    const skinSwatch =
+      findById(REGISTRY.skinTones, skinToneId)?.swatch ?? REGISTRY.skinTones[1].swatch;
+    const skinTexture = useMemo(() => createSkinTexture(skinSwatch), [skinSwatch]);
     const tattooTexture = useMemo(() => {
       if (uploadedImage) {
         const tex = new THREE.Texture();

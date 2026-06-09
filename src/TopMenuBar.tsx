@@ -33,6 +33,9 @@ interface TopMenuBarProps {
   lookId: string;
   onLookChange: (id: string) => void;
   LOOKS: Array<{ id: string; label: string }>;
+  skinToneId: string;
+  onSkinToneChange: (id: string) => void;
+  SKIN_TONES: Array<{ id: string; label: string; swatch: string }>;
 }
 
 const sectionTitle: React.CSSProperties = {
@@ -144,7 +147,11 @@ export default function TopMenuBar({
   lookId,
   onLookChange,
   LOOKS,
+  skinToneId,
+  onSkinToneChange,
+  SKIN_TONES,
 }: TopMenuBarProps) {
+  const activeSkinTone = SKIN_TONES.find((tone) => tone.id === skinToneId) ?? SKIN_TONES[0];
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -234,6 +241,40 @@ export default function TopMenuBar({
             <img src={uploadedImage} alt="Decal preview" />
           </div>
         )}
+      </div>
+
+      <div className="panel-section">
+        <div style={sectionTitle}>Skin tone</div>
+        <div
+          style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}
+          role="radiogroup"
+          aria-label="Skin tone"
+        >
+          {SKIN_TONES.map((tone) => {
+            const selected = skinToneId === tone.id;
+            return (
+              <button
+                key={tone.id}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                title={tone.label}
+                onClick={() => onSkinToneChange(tone.id)}
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: '50%',
+                  border: selected ? '2px solid var(--accent-blue)' : '2px solid var(--border-color)',
+                  background: tone.swatch,
+                  cursor: 'pointer',
+                  padding: 0,
+                  boxShadow: selected ? '0 0 0 2px rgba(77, 124, 255, 0.35)' : 'none',
+                }}
+              />
+            );
+          })}
+        </div>
+        <div style={{ color: 'var(--text-secondary)', fontSize: '0.82rem' }}>{activeSkinTone.label}</div>
       </div>
 
       <div className="panel-section">
