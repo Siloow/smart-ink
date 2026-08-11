@@ -1,8 +1,9 @@
-import React from 'react';
-import { FaArrowRight } from 'react-icons/fa';
+import React, { useState, type FormEvent } from 'react';
+import { requestBetaAccess } from './auth/betaAuthService';
 
 interface LandingPageProps {
-  onNavigateToApp?: () => void;
+  onNavigateToLogin: () => void;
+  onOpenAdmin: () => void;
 }
 
 const features = [
@@ -22,13 +23,46 @@ const features = [
     description: 'Export scene intent and upgrade fidelity with the same contract the production server uses.',
   },
   {
-    icon: '🔷',
-    title: 'Render pipeline demo',
-    description: 'Landing → login → editor → cloud or local Blender render. No business tooling, just the core path.',
+    icon: '✦',
+    title: 'Invite-only beta',
+    description: 'Limited seats while we harden the studio pipeline. Request access — we’ll send an invite.',
   },
 ];
 
-const LandingPage: React.FC<LandingPageProps> = ({ onNavigateToApp }) => {
+const LandingPage: React.FC<LandingPageProps> = ({ onNavigateToLogin, onOpenAdmin }) => {
+  const [email, setEmail] = useState('');
+  const [status, setStatus] = useState<'idle' | 'ok' | 'already' | 'error'>('idle');
+  const [message, setMessage] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const handleRequest = (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setStatus('idle');
+    setMessage('');
+    try {
+      const result = requestBetaAccess(email);
+      if (result.already) {
+        if (result.entry.status === 'active' || result.entry.status === 'invited') {
+          setStatus('already');
+          setMessage('You already have access — log in with that email.');
+        } else {
+          setStatus('already');
+          setMessage('You’re already on the list. We’ll reach out when a seat opens.');
+        }
+      } else {
+        setStatus('ok');
+        setMessage('You’re on the private list. We’ll send an invite when a spot opens.');
+        setEmail('');
+      }
+    } catch (err) {
+      setStatus('error');
+      setMessage(err instanceof Error ? err.message : 'Could not join the waitlist.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="landing">
       <div className="floating-shapes-spline" aria-hidden>
@@ -44,29 +78,39 @@ const LandingPage: React.FC<LandingPageProps> = ({ onNavigateToApp }) => {
           <div className="nav-logo" aria-hidden />
           <div className="nav-links">
             <a href="#features">Features</a>
+            <a href="#request">Request access</a>
           </div>
         </div>
         <div className="nav-actions">
-          <button type="button" className="btn-login" onClick={onNavigateToApp}>
+          <button type="button" className="btn-login" onClick={onNavigateToLogin}>
             Log in
           </button>
-          <button type="button" className="btn-getstarted" onClick={onNavigateToApp}>
-            Open demo
+          <button
+            type="button"
+            className="btn-getstarted"
+            onClick={() => document.getElementById('request')?.scrollIntoView({ behavior: 'smooth' })}
+          >
+            Request access
           </button>
         </div>
       </nav>
 
       <div className="hero-spline">
+        <p className="beta-hero-badge">Private beta · Invite only</p>
         <h1>
           <span>Preview &amp; render</span>
           <span>tattoos in 3D</span>
         </h1>
         <p>
-          Smart Ink Render is a slim demo of the production pipeline: place designs on a body mesh in the
-          browser, then send the same export to Blender Cycles — locally or in the cloud.
+          Smart Ink is opening a limited studio beta: place designs on a body mesh in the browser, then
+          send the same export to Blender Cycles.
         </p>
-        <button type="button" className="btn-cta" onClick={onNavigateToApp}>
-          Try the editor <span className="arrow">→</span>
+        <button
+          type="button"
+          className="btn-cta"
+          onClick={() => document.getElementById('request')?.scrollIntoView({ behavior: 'smooth' })}
+        >
+          Request beta access <span className="arrow">→</span>
         </button>
       </div>
 
@@ -74,9 +118,9 @@ const LandingPage: React.FC<LandingPageProps> = ({ onNavigateToApp }) => {
 
       <div className="landing-content" id="features">
         <div className="landing-content-inner">
-          <h2 className="landing-section-title">Render pipeline, distilled</h2>
+          <h2 className="landing-section-title">A quieter way in</h2>
           <p className="landing-section-sub">
-            UV placement, lighting presets, camera angles, JSON export, and Cycles rendering — nothing else.
+            See the craft first. If it fits your workflow, ask for a seat — we approve invites by hand.
           </p>
           <div className="feature-grid-landing">
             {features.map((f, i) => (
@@ -88,19 +132,53 @@ const LandingPage: React.FC<LandingPageProps> = ({ onNavigateToApp }) => {
             ))}
           </div>
 
-          <div style={{ textAlign: 'center', padding: '48px 0' }}>
-            <h2 className="landing-section-title">Ready to render?</h2>
-            <p className="landing-section-sub">No account required — jump straight into the editor.</p>
-            <button type="button" className="btn-cta" onClick={onNavigateToApp}>
-              Open Smart Ink Render <FaArrowRight style={{ marginLeft: 8 }} />
-            </button>
+          <div className="beta-request-block" id="request">
+            <h2 className="landing-section-title">Request beta access</h2>
+            <p className="landing-section-sub">
+              Leave your email. If we have a seat, you’ll get a personal invite link — no open signup.
+            </p>
+            <form className="beta-request-form" onSubmit={handleRequest}>
+              <input
+                className="login-input"
+                type="email"
+                required
+                autoComplete="email"
+                placeholder="you@studio.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                aria-label="Email for beta access"
+              />
+              <button type="submit" className="btn-cta" disabled={busy}>
+                {busy ? 'Sending…' : 'Join the list'}
+              </button>
+            </form>
+            {message && (
+              <p
+                className={
+                  status === 'error' ? 'beta-error' : status === 'ok' ? 'beta-success' : 'beta-muted'
+                }
+                style={{ marginTop: 16 }}
+              >
+                {message}
+              </p>
+            )}
+            <p className="beta-muted" style={{ marginTop: 20 }}>
+              Already invited?{' '}
+              <button type="button" className="beta-inline-link" onClick={onNavigateToLogin}>
+                Log in
+              </button>
+            </p>
           </div>
         </div>
       </div>
 
       <footer className="landing-footer">
         <p style={{ textAlign: 'center', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-          © {new Date().getFullYear()} Smart Ink Render. Demo build — render pipeline only.
+          © {new Date().getFullYear()} Smart Ink · Private beta
+          {' · '}
+          <button type="button" className="beta-inline-link" onClick={onOpenAdmin}>
+            Operator
+          </button>
         </p>
       </footer>
     </div>

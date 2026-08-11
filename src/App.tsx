@@ -9,6 +9,10 @@ import TopMenuBar from './TopMenuBar'
 import ScenesDashboard from './ScenesDashboard'
 import LandingPage from './LandingPage'
 import LoginPage from './LoginPage'
+import InvitePage from './InvitePage'
+import InviteCodeEntry from './InviteCodeEntry'
+import BetaAdminPage from './BetaAdminPage'
+import { useBetaAuth } from './auth/useBetaAuth'
 import EditorLeftPanel from './EditorLeftPanel'
 import type { SceneData } from './types'
 import { updateScene } from './sceneStorage'
@@ -82,11 +86,53 @@ function ExportRenderer({ onRendererReady }: { onRendererReady: (renderer: THREE
   return null
 }
 
+type GateView = 'landing' | 'login' | 'invite' | 'invite-code' | 'admin' | 'app'
+
+function initialGateView(): { view: GateView; inviteCode: string | null } {
+  if (typeof window === 'undefined') return { view: 'landing', inviteCode: null }
+  const params = new URLSearchParams(window.location.search)
+  if (params.get('admin') === '1') return { view: 'admin', inviteCode: null }
+  const invite = params.get('invite')?.trim().toUpperCase() ?? null
+  if (invite) return { view: 'invite', inviteCode: invite }
+  return { view: 'landing', inviteCode: null }
+}
+
 function App() {
+  const betaAuth = useBetaAuth()
   const [currentScene, setCurrentScene] = useState<SceneData | null>(null)
-  const [showLandingPage, setShowLandingPage] = useState(true)
-  const [showLoginPage, setShowLoginPage] = useState(false)
-  const [showDashboard, setShowDashboard] = useState(false)
+  const [gateView, setGateView] = useState<GateView>(() => {
+    const boot = initialGateView()
+    if (betaAuth.session && boot.view !== 'invite' && boot.view !== 'admin') return 'app'
+    return boot.view
+  })
+  const [inviteCode, setInviteCode] = useState<string | null>(() => initialGateView().inviteCode)
+  const [showDashboard, setShowDashboard] = useState(() => Boolean(betaAuth.session))
+
+  const clearInviteQuery = useCallback(() => {
+    const url = new URL(window.location.href)
+    if (url.searchParams.has('invite') || url.searchParams.has('admin')) {
+      url.searchParams.delete('invite')
+      url.searchParams.delete('admin')
+      window.history.replaceState({}, '', url.pathname + url.search + url.hash)
+    }
+  }, [])
+
+  const enterApp = useCallback(
+    (session?: Parameters<typeof betaAuth.setSession>[0] | null) => {
+      if (session) betaAuth.setSession(session)
+      clearInviteQuery()
+      setGateView('app')
+      setShowDashboard(true)
+    },
+    [betaAuth.setSession, clearInviteQuery]
+  )
+
+  const goHome = useCallback(() => {
+    clearInviteQuery()
+    setShowDashboard(false)
+    setGateView('landing')
+  }, [clearInviteQuery])
+
   // Editor state (mirrors SceneData)
   const [uploadedImage, setUploadedImage] = useState<string | null>(null)
   const [model, setModel] = useState<'Monk' | 'FinalBaseMesh' | 'Human'>('FinalBaseMesh')
@@ -552,28 +598,73 @@ function App() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [showRenderHistory])
 
-  if (showLandingPage) {
+  if (gateView === 'landing') {
     return (
       <LandingPage
-        onNavigateToApp={() => {
-          setShowLandingPage(false)
-          setShowLoginPage(true)
+        onNavigateToLogin={() => setGateView('login')}
+        onOpenAdmin={() => setGateView('admin')}
+      />
+    )
+  }
+
+  if (gateView === 'admin') {
+    return (
+      <BetaAdminPage
+        unlocked={betaAuth.adminUnlocked}
+        waitlist={betaAuth.waitlist}
+        invites={betaAuth.invites}
+        activeEmails={betaAuth.activeEmails}
+        onUnlock={betaAuth.unlockAdmin}
+        onLock={betaAuth.lockAdmin}
+        onRefresh={betaAuth.refreshAdminData}
+        onBack={goHome}
+      />
+    )
+  }
+
+  if (gateView === 'invite-code') {
+    return (
+      <InviteCodeEntry
+        onBack={() => setGateView('login')}
+        onContinue={(code) => {
+          setInviteCode(code)
+          setGateView('invite')
         }}
       />
     )
   }
 
-  if (showLoginPage) {
+  if (gateView === 'invite' && inviteCode) {
+    return (
+      <InvitePage
+        code={inviteCode}
+        onBack={goHome}
+        onAuthenticated={(session) => {
+          betaAuth.setSession(session)
+          enterApp(session)
+        }}
+      />
+    )
+  }
+
+  if (gateView === 'login' || (gateView === 'invite' && !inviteCode)) {
     return (
       <LoginPage
-        onNavigateToApp={() => {
-          setShowLoginPage(false)
-          setShowDashboard(true)
+        onAuthenticated={(session) => {
+          betaAuth.setSession(session)
+          enterApp(session)
         }}
-        onBackToLanding={() => {
-          setShowLoginPage(false)
-          setShowLandingPage(true)
-        }}
+        onBackToLanding={goHome}
+        onOpenInvite={() => setGateView('invite-code')}
+      />
+    )
+  }
+
+  if (!betaAuth.session) {
+    return (
+      <LandingPage
+        onNavigateToLogin={() => setGateView('login')}
+        onOpenAdmin={() => setGateView('admin')}
       />
     )
   }
@@ -583,10 +674,7 @@ function App() {
       <div style={{ position: 'relative', width: '100%', minHeight: '100vh' }}>
         <ScenesDashboard
           onSelectScene={loadScene}
-          onOpenLanding={() => {
-            setShowDashboard(false)
-            setShowLandingPage(true)
-          }}
+          onOpenLanding={goHome}
         />
       </div>
     )
@@ -614,7 +702,7 @@ function App() {
           <button type="button" className="tool-btn tool-btn--ghost" onClick={() => setShowExportModal(true)}>
             Export
           </button>
-          <button type="button" className="tool-btn-nav tool-btn-nav--purple" onClick={() => setShowLandingPage(true)}>
+          <button type="button" className="tool-btn-nav tool-btn-nav--purple" onClick={goHome}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
               <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" />
             </svg>
@@ -626,8 +714,19 @@ function App() {
             </svg>
             Scenes
           </button>
-          <div className="editor-toolbar-avatar" aria-hidden>
-            S
+          <button
+            type="button"
+            className="tool-btn tool-btn--ghost"
+            title="Sign out"
+            onClick={() => {
+              betaAuth.logout()
+              goHome()
+            }}
+          >
+            Sign out
+          </button>
+          <div className="editor-toolbar-avatar" title={betaAuth.session?.email} aria-hidden>
+            {(betaAuth.session?.displayName?.[0] ?? 'S').toUpperCase()}
           </div>
         </div>
       </header>
