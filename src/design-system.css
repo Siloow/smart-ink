@@ -2410,3 +2410,220 @@ body {
     justify-content: flex-start;
   }
 }
+
+/* ——— Beta gate / invite ——— */
+.beta-hero-badge {
+  display: inline-block;
+  margin-bottom: 16px;
+  padding: 6px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.beta-request-block {
+  margin-top: 64px;
+  padding: 40px 28px;
+  text-align: center;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  background: linear-gradient(180deg, rgba(30, 30, 36, 0.9), rgba(14, 14, 14, 0.6));
+}
+
+.beta-request-form {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+  max-width: 520px;
+  margin: 24px auto 0;
+}
+
+.beta-request-form .login-input {
+  flex: 1 1 240px;
+}
+
+.beta-gate-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 32px 16px;
+  background:
+    radial-gradient(ellipse at top, rgba(77, 124, 255, 0.12), transparent 55%),
+    var(--bg-primary);
+}
+
+.beta-gate-card {
+  width: min(440px, 100%);
+  padding: 28px;
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-glow);
+}
+
+.beta-gate-card h1,
+.beta-admin-header h1 {
+  font-size: 1.75rem;
+  margin: 4px 0 10px;
+}
+
+.beta-eyebrow {
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent-blue);
+  margin-bottom: 4px;
+}
+
+.beta-lead,
+.beta-muted {
+  color: var(--text-secondary);
+  line-height: 1.5;
+  font-size: 0.95rem;
+}
+
+.beta-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.beta-label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.beta-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9em;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: var(--bg-input);
+}
+
+.beta-error {
+  color: #ff7a9a;
+  font-size: 0.9rem;
+  margin-top: 8px;
+}
+
+.beta-success {
+  color: var(--accent-green);
+  font-size: 0.95rem;
+}
+
+.beta-banner {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: rgba(77, 124, 255, 0.12);
+  border: 1px solid rgba(77, 124, 255, 0.25);
+  color: var(--text-primary);
+  font-size: 0.9rem;
+}
+
+.beta-banner--error {
+  background: rgba(255, 77, 122, 0.1);
+  border-color: rgba(255, 77, 122, 0.3);
+}
+
+.beta-link-btn,
+.beta-inline-link {
+  background: none;
+  border: none;
+  color: var(--accent-blue);
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+}
+
+.beta-link-btn {
+  margin-bottom: 16px;
+  color: var(--text-secondary);
+}
+
+.beta-inline-link:hover,
+.beta-link-btn:hover {
+  text-decoration: underline;
+}
+
+.beta-otp-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.beta-otp-row .login-input {
+  flex: 1 1 160px;
+}
+
+.beta-admin-page {
+  min-height: 100vh;
+  padding: 32px 20px 64px;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.beta-admin-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.beta-admin-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.beta-admin-note {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  margin-bottom: 20px;
+}
+
+.beta-admin-section {
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.beta-admin-section h2 {
+  font-size: 1.1rem;
+  margin-bottom: 12px;
+}
+
+.beta-admin-inline-form {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.beta-admin-inline-form .login-input {
+  flex: 1 1 220px;
+}
+
+.beta-admin-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.beta-admin-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+}
