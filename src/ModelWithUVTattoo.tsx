@@ -11,24 +11,37 @@ import { useLoader, useThree, useFrame } from '@react-three/fiber';
 import { GLTFLoader, OBJLoader } from 'three-stdlib';
 import * as THREE from 'three';
 import { TextureLoader } from 'three';
+import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { TATTOO_LAYER_GLSL } from './render/tattooLayer';
 import { findById, REGISTRY, type PreviewModel } from './render/registry';
 import type { LightDefinition } from './config/lightingPresets';
 
 const SAFE_ZONE = { uMin: 0.05, uMax: 0.95, vMin: 0.08, vMax: 0.92 };
 const MAX_SCENE_LIGHTS = 4;
+const HUMAN_ELBOW_BONE = 'r_forearm';
 
 const vertexShader = `
+  #include <common>
+  #include <skinning_pars_vertex>
+
   varying vec2 vUv;
   varying vec3 vWorldNormal;
   varying vec3 vWorldPosition;
 
   void main() {
     vUv = uv;
-    vec4 worldPos = modelMatrix * vec4(position, 1.0);
+
+    #include <beginnormal_vertex>
+    #include <skinbase_vertex>
+    #include <skinnormal_vertex>
+
+    #include <begin_vertex>
+    #include <skinning_vertex>
+
+    vec4 worldPos = modelMatrix * vec4(transformed, 1.0);
     vWorldPosition = worldPos.xyz;
-    vWorldNormal = normalize(mat3(modelMatrix) * normal);
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    vWorldNormal = normalize(mat3(modelMatrix) * objectNormal);
+    gl_Position = projectionMatrix * viewMatrix * worldPos;
   }
 `;
 
@@ -130,32 +143,9 @@ function ensureUVs(geometry: THREE.BufferGeometry): void {
 
 const HUMAN_TARGET_HEIGHT = 20.74;
 
-const humanObjCache: { root: THREE.Group | null; promise: Promise<THREE.Group> | null } = {
-  root: null,
-  promise: null,
-};
-
-function loadHumanObj(): Promise<THREE.Group> {
-  if (humanObjCache.root) return Promise.resolve(humanObjCache.root);
-  if (!humanObjCache.promise) {
-    humanObjCache.promise = new Promise((resolve, reject) => {
-      new OBJLoader().load(
-        '/human.obj',
-        (obj) => {
-          humanObjCache.root = obj;
-          resolve(obj);
-        },
-        undefined,
-        reject
-      );
-    });
-  }
-  return humanObjCache.promise;
-}
-
 function isHumanAccessoryMaterial(material: THREE.Material | THREE.Material[]): boolean {
   const materials = Array.isArray(material) ? material : [material];
-  return materials.some((mat) => /eye|lash|tear|brow|moisture|mouth/i.test(mat.name));
+  return materials.some((mat) => /eye|lash|tear|brow|moisture|mouth|tooth|nail/i.test(mat.name));
 }
 
 function centerAndScaleToHeight(group: THREE.Object3D, targetHeight: number): void {
@@ -169,6 +159,16 @@ function centerAndScaleToHeight(group: THREE.Object3D, targetHeight: number): vo
   if (size.y > 0) {
     group.scale.setScalar(targetHeight / size.y);
   }
+}
+
+function findElbowBone(root: THREE.Object3D): THREE.Bone | null {
+  let found: THREE.Bone | null = null;
+  root.traverse((obj) => {
+    if (found) return;
+    const bone = obj as THREE.Bone;
+    if (bone.isBone && bone.name === HUMAN_ELBOW_BONE) found = bone;
+  });
+  return found;
 }
 
 function createSkinTexture(hexColor: string): THREE.CanvasTexture {
@@ -218,6 +218,8 @@ interface ModelWithUVTattooProps {
   lights?: LightDefinition[];
   intensityScale?: number;
   performanceMode?: boolean;
+  /** Degrees of right-elbow flexion for the skinned Human preview. */
+  armBendDeg?: number;
 }
 
 const ModelWithUVTattoo = forwardRef<ModelWithUVTattooHandle, ModelWithUVTattooProps>(
@@ -233,15 +235,14 @@ const ModelWithUVTattoo = forwardRef<ModelWithUVTattooHandle, ModelWithUVTattooP
       lights = [],
       intensityScale = 1,
       performanceMode = false,
+      armBendDeg = 0,
     },
     ref
   ) {
     const { camera, scene, gl } = useThree();
     const [cloneGroup, setCloneGroup] = useState<THREE.Object3D | null>(null);
-    const [humanRoot, setHumanRoot] = useState<THREE.Group | null>(
-      () => humanObjCache.root
-    );
     const pickTargetRef = useRef<THREE.Object3D | null>(null);
+    const elbowBoneRef = useRef<THREE.Bone | null>(null);
     const tattooCenter = useRef(new THREE.Vector2(0.5, 0.5));
     const [hasPlaced, setHasPlaced] = useState(false);
     const hasPlacedRef = useRef(false);
@@ -253,23 +254,8 @@ const ModelWithUVTattoo = forwardRef<ModelWithUVTattooHandle, ModelWithUVTattooP
 
     const logoTexture = useLoader(TextureLoader, '/logo.png');
     const monkGltf = useLoader(GLTFLoader, '/monk.glb');
+    const humanGltf = useLoader(GLTFLoader, '/human_arm_rig.glb');
     const baseObj = useLoader(OBJLoader, '/FinalBaseMesh.obj');
-
-    useEffect(() => {
-      if (model !== 'Human') return;
-      if (humanRoot) return;
-      let cancelled = false;
-      loadHumanObj()
-        .then((obj) => {
-          if (!cancelled) setHumanRoot(obj);
-        })
-        .catch((err) => {
-          console.error('Failed to load human.obj', err);
-        });
-      return () => {
-        cancelled = true;
-      };
-    }, [model, humanRoot]);
 
     const enforceSafeZone = model !== 'Human';
     const safeZoneVisible = showSafeZone && enforceSafeZone;
@@ -355,6 +341,13 @@ const ModelWithUVTattoo = forwardRef<ModelWithUVTattooHandle, ModelWithUVTattooP
       shaderMaterial.uniforms.tattooVisible.value = hasPlacedRef.current ? 1.0 : 0.0;
       shaderMaterial.uniforms.showSafeZone.value = safeZoneVisible ? 1.0 : 0.0;
 
+      const bone = elbowBoneRef.current;
+      if (bone) {
+        // Local X is the elbow hinge for this armature export.
+        bone.rotation.set(THREE.MathUtils.degToRad(armBendDeg), 0, 0);
+        bone.updateMatrixWorld(true);
+      }
+
       const perf = performanceMode ? 0.5 : 1;
       let ambientStrength = 0;
       const ambientColor = new THREE.Color(0, 0, 0);
@@ -396,25 +389,21 @@ const ModelWithUVTattoo = forwardRef<ModelWithUVTattooHandle, ModelWithUVTattooP
     });
 
     useEffect(() => {
-      if (model === 'Human' && !humanRoot) {
-        pickTargetRef.current = null;
-        setCloneGroup(null);
-        return;
-      }
-
       let modelGroup: THREE.Object3D;
       if (model === 'Monk') {
         modelGroup = monkGltf.scene;
       } else if (model === 'Human') {
-        modelGroup = humanRoot!;
+        modelGroup = humanGltf.scene;
       } else {
         modelGroup = baseObj;
       }
 
-      const group = modelGroup.clone(true);
+      const group =
+        model === 'Human' ? cloneSkinned(modelGroup) : modelGroup.clone(true);
+
+      elbowBoneRef.current = null;
 
       if (model === 'Human') {
-        group.rotation.x = -Math.PI / 2;
         group.traverse((child) => {
           const m = child as THREE.Mesh;
           if (!m.isMesh) return;
@@ -424,8 +413,13 @@ const ModelWithUVTattoo = forwardRef<ModelWithUVTattooHandle, ModelWithUVTattooP
           }
           if (!m.geometry.attributes.uv) ensureUVs(m.geometry);
           m.material = shaderMaterial;
+          const skinned = m as THREE.SkinnedMesh;
+          if (skinned.isSkinnedMesh) {
+            skinned.bind(skinned.skeleton, skinned.bindMatrix);
+          }
         });
         centerAndScaleToHeight(group, HUMAN_TARGET_HEIGHT);
+        elbowBoneRef.current = findElbowBone(group);
         pickTargetRef.current = group;
         setCloneGroup(group);
         return;
@@ -453,7 +447,7 @@ const ModelWithUVTattoo = forwardRef<ModelWithUVTattooHandle, ModelWithUVTattooP
         pickTargetRef.current = null;
         setCloneGroup(null);
       }
-    }, [model, monkGltf, baseObj, humanRoot, shaderMaterial]);
+    }, [model, monkGltf, humanGltf, baseObj, shaderMaterial]);
 
     useEffect(() => {
       setDecalVisible(hasPlaced);

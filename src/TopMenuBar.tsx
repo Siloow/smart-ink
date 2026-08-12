@@ -14,6 +14,8 @@ interface TopMenuBarProps {
   onSkinChange: (id: string) => void;
   onPoseChange: (id: string) => void;
   onLookChange: (id: string) => void;
+  armBendDeg?: number;
+  onArmBendChange?: (deg: number) => void;
   setUploadedImage: (img: string | null) => void;
   uploadedImage: string | null;
   decalVisible: boolean;
@@ -68,6 +70,8 @@ export default function TopMenuBar({
   onSkinChange,
   onPoseChange,
   onLookChange,
+  armBendDeg = 0,
+  onArmBendChange,
   setUploadedImage,
   uploadedImage,
   decalVisible,
@@ -130,6 +134,8 @@ export default function TopMenuBar({
           onSkinChange={onSkinChange}
           onPoseChange={onPoseChange}
           onLookChange={onLookChange}
+          armBendDeg={armBendDeg}
+          onArmBendChange={onArmBendChange}
         />
 
         <section className="ep-section">

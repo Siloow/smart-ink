@@ -154,6 +154,7 @@ function App() {
   const [bodyMeshId, setBodyMeshId] = useState('body_full')
   const [skinToneId, setSkinToneId] = useState('tone_03')
   const [poseId, setPoseId] = useState('neutral')
+  const [armBendDeg, setArmBendDeg] = useState(0)
   const [lookId, setLookId] = useState('studio_softbox')
   const [qualityTier, setQualityTier] = useState<'preview' | 'final'>('preview')
   const uvPlacementRef = useRef<ModelWithUVTattooHandle>(null)
@@ -768,6 +769,7 @@ function App() {
           lights={lights}
           intensityScale={LIGHTING_PRESETS[lightingPreset].threeIntensityScale}
           performanceMode={performanceMode}
+          armBendDeg={armBendDeg}
         />
         <OrbitControlsWithCmdLock
           ref={orbitControlsRef}
@@ -791,10 +793,13 @@ function App() {
           onBodyChange={(id) => {
             setBodyMeshId(id)
             setModel(previewModelForBody(id))
+            if (id !== 'human') setArmBendDeg(0)
           }}
           onSkinChange={setSkinToneId}
           onPoseChange={setPoseId}
           onLookChange={handleLookChange}
+          armBendDeg={armBendDeg}
+          onArmBendChange={setArmBendDeg}
           setUploadedImage={setUploadedImage}
           uploadedImage={uploadedImage}
           decalVisible={decalVisible}

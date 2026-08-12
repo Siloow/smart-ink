@@ -10,6 +10,8 @@ export interface CharacterBuilderSectionsProps {
   onSkinChange: (id: string) => void;
   onPoseChange: (id: string) => void;
   onLookChange: (id: string) => void;
+  armBendDeg?: number;
+  onArmBendChange?: (deg: number) => void;
 }
 
 function Section({ label, children }: { label: string; children: ReactNode }) {
@@ -34,7 +36,11 @@ export default function CharacterBuilderSections({
   onSkinChange,
   onPoseChange,
   onLookChange,
+  armBendDeg = 0,
+  onArmBendChange,
 }: CharacterBuilderSectionsProps) {
+  const showArmRig = bodyMeshId === 'human';
+
   return (
     <>
       <Section label="Body">
@@ -101,6 +107,27 @@ export default function CharacterBuilderSections({
             );
           })}
         </div>
+        {showArmRig && onArmBendChange && (
+          <div className="ep-field" style={{ marginTop: 12 }}>
+            <div className="ep-field-row">
+              <span className="ep-field-label">Right elbow</span>
+              <span className="ep-field-label">{Math.round(armBendDeg)}°</span>
+            </div>
+            <input
+              className="ep-range"
+              type="range"
+              min={0}
+              max={120}
+              step={1}
+              value={armBendDeg}
+              onChange={(e) => onArmBendChange(Number(e.target.value))}
+              aria-label="Right elbow bend"
+            />
+            <p className="ep-hint" style={{ marginTop: 6 }}>
+              Place a tattoo on the arm, then bend to preview UV deformation.
+            </p>
+          </div>
+        )}
       </Section>
 
       <Section label="Lighting">
