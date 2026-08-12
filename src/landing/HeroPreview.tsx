@@ -7,8 +7,8 @@ import { SplitFigure } from './PipelineFigures';
 /**
  * Live version of the hero pipeline figure: the real forearm mesh, split down
  * the middle of the viewport — wireframe geometry on one side, lit skin with the
- * design on the other. The design is projected in object space, so it stays put
- * on the surface as the limb turns.
+ * design on the other. Dragging turns the limb; holding ⌘ drags the design
+ * itself over the surface, a taste of the placement step in the editor.
  *
  * The forearm is the only body asset light enough for a landing page (156 KB);
  * three.js itself is already in the bundle for the editor, so this costs no
@@ -23,30 +23,97 @@ const MESH_URL = '/forearm.obj';
  * camera below shows a little over 2 — a cropped section, as in the drawn figure.
  */
 const TARGET_WIDTH = 1;
-/** Sits the view on the clean shaft, below the flare at the elbow end. */
-const VIEW_CENTER_Y = -0.35;
-const CAMERA_DISTANCE = 5.2;
-const DESIGN_CENTER = new THREE.Vector2(0, -0.05);
-const DESIGN_SIZE = new THREE.Vector2(0.58, 0.58);
+/**
+ * Height along the limb that sits at the centre of frame. Framed down by the
+ * wrist rather than on the middle of the shaft: cropped to the shaft alone the
+ * limb was an anonymous tube, so the shot now runs from the forearm, where the
+ * design goes, down through the wrist to the hand.
+ */
+const VIEW_CENTER_Y = -1.8;
+/** Half turn to choose between the palm and the back of the hand. */
+const HAND_FACE_TURN = 0;
+/**
+ * A long lens flattens the limb into a column, so the camera comes in close on a
+ * wider one: the shaft tapers away and the near surface reads as round.
+ */
+const CAMERA_FOV = 38;
+const CAMERA_DISTANCE = 5.15;
+/**
+ * Lean of the limb across the frame. Upright, it sat parallel to the divider —
+ * two vertical lines down the middle of the panel — so it now runs corner to
+ * corner and crosses the divider instead.
+ */
+const LIMB_TILT = -0.2;
+/**
+ * The design is placed in cylindrical surface coordinates — an angle around the
+ * limb and a height along it — rather than projected from a fixed direction, so
+ * that it can be dragged to any point on the skin and stays there as the limb
+ * turns, including round the far side.
+ */
+const DESIGN_EXTENT = 0.58;
+/** Radius of the limb once normalised, which sets the arc a square design spans. */
+const LIMB_RADIUS = TARGET_WIDTH / 2;
+const DESIGN_SIZE = new THREE.Vector2(DESIGN_EXTENT / LIMB_RADIUS, DESIGN_EXTENT);
+/** Angle 0 faces the camera at rest; the height is in mesh units. */
+const DESIGN_CENTER = new THREE.Vector2(0, 0.7);
+/**
+ * Holds a dragged design to the forearm: below, it would run onto the wrist and
+ * the hand, where a mapping built around the limb's axis has nothing sensible to
+ * say about a flat palm.
+ */
+const DESIGN_HEIGHT_MIN = 0.35;
+const DESIGN_HEIGHT_MAX = 1.15;
+/**
+ * Hits below this are on the wrist or the hand. A drag ignores them, holding the
+ * design at its last place on the forearm: the flat of the hand sits across the
+ * limb's axis, so hits there swing the angle about wildly.
+ */
+const FOREARM_BOTTOM_Y = 0.05;
 /** Spacing of the mesh half's UV grid: rings along the limb, seams around it. */
-const RING_SPACING = 0.34;
+const RING_SPACING = 0.44;
 const SEAM_SPACING = Math.PI / 6;
-/** Idle sweep, in radians either side of the design facing the camera. */
-const SWING = 0.42;
-const SWING_SPEED = 0.22;
+/**
+ * Idle sweep, in radians either side of the rest pose. A sine rather than the
+ * ramp it used to be, which reversed abruptly at each end and read as a
+ * metronome; and centred a little off-axis, since dead-on is the dullest pose.
+ */
+const SWING = 0.3;
+/** Phase advance per second, for a sweep of about eleven seconds. */
+const SWING_SPEED = 0.55;
+/**
+ * Rest pose. Turned a little towards the render side, so the design carries onto
+ * the lit skin — the half worth looking at — rather than sitting square on the
+ * divider or drifting round to the wireframe.
+ */
+const SWING_CENTER = 0.16;
+/** How much of a dragged pose is shed per second, easing back to the rest one. */
+const RETURN_RATE = 0.45;
 /** Radians of limb rotation per pixel dragged. */
 const DRAG_SENSITIVITY = 0.008;
+/** Camera travel at the edge of the panel as the pointer crosses it. */
+const PARALLAX = 0.17;
+/** Share of the remaining parallax distance covered per second. */
+const PARALLAX_EASE = 3.5;
+/** Height along the limb that the key light pools on — the forearm and design. */
+const LIGHT_CENTER = 0.7;
 
 const COLORS = {
   meshFill: new THREE.Color('#16161b'),
   meshLine: new THREE.Color('#e8e8ec'),
   designLine: new THREE.Color('#e8e8ec'),
-  skinShadow: new THREE.Color('#2f1d13'),
-  skinMid: new THREE.Color('#b9855e'),
-  skinLight: new THREE.Color('#ecd0b6'),
-  ink: new THREE.Color('#1b0f08'),
+  skinShadow: new THREE.Color('#33180e'),
+  skinMid: new THREE.Color('#c08355'),
+  skinLight: new THREE.Color('#e8b487'),
+  /** Light scattering through the skin, warmest where the key falls away. */
+  subsurface: new THREE.Color('#93361a'),
+  /** Cool bounce off the far side, to set against the warm key. */
+  bounce: new THREE.Color('#4a86ad'),
+  sheen: new THREE.Color('#fff0dc'),
   rim: new THREE.Color('#ffe2be'),
 };
+
+/** Ink multiplies the lit skin rather than replacing it, so it is a factor. */
+const INK_TINT = new THREE.Vector3(0.11, 0.09, 0.1);
 
 /** The same emblem as the drawn figures, as an alpha mask for the shader. */
 function createDesignTexture(): THREE.CanvasTexture {
@@ -150,6 +217,56 @@ function standUpright(geo: THREE.BufferGeometry): void {
   );
 }
 
+/**
+ * The hand is flat, and it is cut from the body turned edge-on to the camera: a
+ * blade a third of the width of the wrist, which reads as nothing at all. Turn
+ * the limb about its own axis until the palm is broadside and the fingers spread
+ * across the view. The forearm is round in section, so turning it costs the rest
+ * of the frame nothing.
+ */
+function faceHandForward(geo: THREE.BufferGeometry): void {
+  const position = geo.attributes.position;
+  if (!position || position.count === 0) return;
+
+  geo.computeBoundingBox();
+  const box = geo.boundingBox!;
+  const span = box.max.y - box.min.y;
+  if (span <= 0) return;
+  /* The hand is the outer fifth of the limb, at the low end after standUpright. */
+  const cut = box.min.y + span * 0.2;
+
+  let count = 0;
+  let cx = 0;
+  let cz = 0;
+  for (let i = 0; i < position.count; i++) {
+    if (position.getY(i) > cut) continue;
+    cx += position.getX(i);
+    cz += position.getZ(i);
+    count++;
+  }
+  if (count < 8) return;
+  cx /= count;
+  cz /= count;
+
+  /* Spread of the hand around the axis, as a covariance in the XZ plane. */
+  let xx = 0;
+  let zz = 0;
+  let xz = 0;
+  for (let i = 0; i < position.count; i++) {
+    if (position.getY(i) > cut) continue;
+    const dx = position.getX(i) - cx;
+    const dz = position.getZ(i) - cz;
+    xx += dx * dx;
+    zz += dz * dz;
+    xz += dx * dz;
+  }
+  /* Angle of the widest direction of that spread, turned onto the screen's
+     horizontal. Which face this lands on — palm or back of the hand — is the
+     half turn the covariance can't distinguish, hence the constant. */
+  const widest = 0.5 * Math.atan2(2 * xz, xx - zz);
+  geo.rotateY(widest + HAND_FACE_TURN);
+}
+
 interface Band {
   midX: number;
   midZ: number;
@@ -186,6 +303,12 @@ function measureBands(geo: THREE.BufferGeometry, count: number): Band[] {
     bands.push({ midX: (minX + maxX) / 2, midZ: (minZ + maxZ) / 2, width: maxX - minX });
   }
   return bands;
+}
+
+/** Folds an angle into (-PI, PI], matching the shader's wrap. */
+function wrapAngle(angle: number): number {
+  const turn = Math.PI * 2;
+  return angle - turn * Math.floor(angle / turn + 0.5);
 }
 
 function median(values: number[]): number {
@@ -246,6 +369,7 @@ class ForearmGeometryLoader extends THREE.Loader<THREE.BufferGeometry> {
           const geo = geometry as THREE.BufferGeometry;
           if (!geo.attributes.normal) geo.computeVertexNormals();
           standUpright(geo);
+          faceHandForward(geo);
           frameOnShaft(geo);
           onLoad(geo);
         } catch (error) {
@@ -260,13 +384,11 @@ class ForearmGeometryLoader extends THREE.Loader<THREE.BufferGeometry> {
 
 const vertexShader = /* glsl */ `
   varying vec3 vObjPos;
-  varying vec3 vObjNormal;
   varying vec3 vWorldNormal;
   varying vec3 vViewDir;
 
   void main() {
     vObjPos = position;
-    vObjNormal = normal;
     vWorldNormal = normalize(mat3(modelMatrix) * normal);
     vec4 worldPos = modelMatrix * vec4(position, 1.0);
     vViewDir = normalize(cameraPosition - worldPos.xyz);
@@ -287,13 +409,28 @@ const fragmentShader = /* glsl */ `
   uniform vec3 uSkinShadow;
   uniform vec3 uSkinMid;
   uniform vec3 uSkinLight;
+  uniform vec3 uSubsurface;
+  uniform vec3 uBounce;
+  uniform vec3 uSheen;
   uniform vec3 uInk;
   uniform vec3 uRim;
+  uniform float uLightCenter;
 
   varying vec3 vObjPos;
-  varying vec3 vObjNormal;
   varying vec3 vWorldNormal;
   varying vec3 vViewDir;
+
+  const float TAU = 6.283185307;
+  /**
+   * The render half shows the right of the limb, so the key is set just inside
+   * it, high and a little to the right of the lens: brightest where the design
+   * sits by the divider, then turning away to the far silhouette, where the rim
+   * picks the arm back off the background. Any further round and the whole half
+   * is lit evenly and the form goes flat; any further left and the lit area
+   * narrows to a slit against the divider.
+   */
+  const vec3 KEY_DIR = vec3(0.22, 0.52, 0.82);
+  const vec3 BOUNCE_DIR = vec3(0.9, -0.34, 0.26);
 
   /** Screen-space-consistent line along multiples of "spacing". */
   float gridLine(float coord, float spacing, float widthPx) {
@@ -303,35 +440,86 @@ const fragmentShader = /* glsl */ `
     return 1.0 - smoothstep(0.0, max(w, 1e-5), dist);
   }
 
+  /**
+   * Filmic curve and sRGB encode for the render half. The palette is in the
+   * linear working space, and a custom shader gets none of the conversion that
+   * three's own materials do, so without this the skin is written out crushed
+   * and the highlights clip flat instead of rolling off.
+   */
+  vec3 film(vec3 color) {
+    color *= 0.56;
+    vec3 curved = clamp(
+      (color * (2.51 * color + 0.03)) / (color * (2.43 * color + 0.59) + 0.14),
+      0.0,
+      1.0
+    );
+    return pow(curved, vec3(1.0 / 2.2));
+  }
+
   void main() {
     vec3 N = normalize(vWorldNormal);
     vec3 V = normalize(vViewDir);
     float facingCamera = max(dot(N, V), 0.0);
 
-    // Projected design, in object space so it travels with the surface.
-    vec2 duv = (vObjPos.xy - uDesignCenter) / uDesignSize + 0.5;
+    /* The design sits in the limb's own cylindrical coordinates: an angle
+       around it and a height along it. Every surface point maps to one place in
+       the design, so the ink is on the skin rather than projected through it. */
+    float aroundLimb = atan(vObjPos.x, vObjPos.z);
+    float angleFromCenter = aroundLimb - uDesignCenter.x;
+    // Shortest way round, so the design may straddle the back of the limb.
+    angleFromCenter -= TAU * floor(angleFromCenter / TAU + 0.5);
+    vec2 duv = vec2(angleFromCenter, vObjPos.y - uDesignCenter.y) / uDesignSize + 0.5;
     float inside =
       step(0.0, duv.x) * step(duv.x, 1.0) *
       step(0.0, duv.y) * step(duv.y, 1.0);
-    float towardProjector = smoothstep(0.05, 0.55, normalize(vObjNormal).z);
-    float ink = texture2D(uDesign, duv).a * inside * towardProjector;
+    float ink = texture2D(uDesign, duv).a * inside;
 
     // — Mesh half: cylindrical UV grid over a flat fill.
     float rings = gridLine(vObjPos.y, uRingSpacing, 1.1);
-    float seams = gridLine(atan(vObjPos.x, vObjPos.z), uSeamSpacing, 1.1);
+    float seams = gridLine(aroundLimb, uSeamSpacing, 1.1);
     float silhouette = 1.0 - smoothstep(0.0, 0.55, facingCamera);
     vec3 meshColor = mix(uMeshFill, uMeshLine, max(rings, seams) * 0.75);
     meshColor = mix(meshColor, uMeshLine, silhouette * 0.7);
     meshColor = mix(meshColor, uDesignLine, ink * 0.92);
 
-    // — Render half: key light from the render side, soft fill from the other.
-    float key = max(dot(N, normalize(vec3(0.62, 0.4, 0.68))), 0.0);
-    float fill = max(dot(N, normalize(vec3(-0.8, -0.1, 0.5))), 0.0);
-    vec3 skin = mix(uSkinShadow, uSkinMid, smoothstep(-0.15, 0.85, key));
-    skin = mix(skin, uSkinLight, smoothstep(0.55, 1.0, key) * 0.85);
-    skin += uSkinMid * (fill * 0.14 + 0.1);
-    skin = mix(skin, uInk, ink * 0.88);
-    skin += uRim * pow(1.0 - facingCamera, 3.0) * 0.3;
+    /* — Render half: a warm key against a cool bounce, pooling on the mid
+       shaft so the light falls away where the crop leaves the limb. */
+    vec3 keyDir = normalize(KEY_DIR);
+    /* Falls away far enough down the limb to leave the hand dimmer than the
+       forearm, without losing it to the dark. */
+    float pool = 1.0 - smoothstep(0.8, 3.2, abs(vObjPos.y - uLightCenter));
+    /* Wrapped rather than clamped at the terminator: light entering skin
+       scatters before it leaves, so it carries on around the form instead of
+       stopping dead where the surface turns away. */
+    float key = max((dot(N, keyDir) + 0.4) / 1.4, 0.0) * mix(0.5, 1.0, pool);
+    float bounce = max(dot(N, normalize(BOUNCE_DIR)), 0.0);
+
+    vec3 skin = mix(uSkinShadow, uSkinMid, smoothstep(-0.05, 0.85, key));
+    /* Held short of the full highlight colour: taken all the way, the top of the
+       ramp goes achromatic and the skin reads as ivory rather than skin. */
+    skin = mix(skin, uSkinLight, smoothstep(0.72, 1.0, key) * 0.6);
+    /* The band where the key falls off is where light has travelled furthest
+       through the skin before coming back out — the flesh under it glows. */
+    float terminator = smoothstep(0.02, 0.4, key) * (1.0 - smoothstep(0.28, 0.78, key));
+    skin = mix(skin, uSubsurface, terminator * 0.45);
+    skin += uBounce * bounce * 0.25;
+    // Shade the form as it turns away from the lens, to give it some weight.
+    skin *= mix(0.68, 1.0, smoothstep(0.0, 0.6, facingCamera));
+
+    /* Ink lies under the skin, so it darkens the surface rather than covering
+       it, and the sheen added below still runs across the tattoo. The line work
+       is about a pixel wide here, so its coverage is firmed up first: against
+       the dark mesh half a half-covered pixel still reads, but a 40% darkening
+       of lit skin does not. */
+    skin *= mix(vec3(1.0), uInk, smoothstep(0.06, 0.6, ink));
+
+    float sheen = pow(max(dot(N, normalize(keyDir + V)), 0.0), 26.0);
+    skin += uSheen * sheen * smoothstep(0.0, 0.3, key) * 0.26;
+    /* The background is nearly black too, so the shadow side needs an edge to
+       lift the silhouette off it. Kept tight: spread wide, it washes most of the
+       shadow side to a pale grey instead of reading as an edge light. */
+    skin += uRim * pow(1.0 - facingCamera, 5.0) * 1.5;
+    skin = film(skin);
 
     vec3 color = gl_FragCoord.x < uSplit ? meshColor : skin;
     gl_FragColor = vec4(color, 1.0);
@@ -339,17 +527,32 @@ const fragmentShader = /* glsl */ `
 `;
 
 interface SpinState {
-  angle: React.RefObject<number>;
-  direction: React.RefObject<number>;
-  dragging: React.RefObject<boolean>;
+  /** Phase of the idle sweep, in radians. */
+  phase: React.RefObject<number>;
+  /** Rotation carried over from dragging, which eases back to zero. */
+  offset: React.RefObject<number>;
+  /** Held while the pointer is down, in either mode, to still the idle swing. */
+  interacting: React.RefObject<boolean>;
   /** When false the limb only turns under the pointer. */
   autoSwing: boolean;
 }
 
-const Forearm: React.FC<{ spin: SpinState; onReady: () => void }> = ({ spin, onReady }) => {
+interface DesignDrag {
+  /** Client position of the pointer while the design is being moved, else null. */
+  pointer: React.RefObject<{ x: number; y: number } | null>;
+  /** Pointer position over the panel as -1..1 from the centre, for parallax. */
+  hover: React.RefObject<THREE.Vector2>;
+}
+
+const Forearm: React.FC<{ spin: SpinState; drag: DesignDrag; onReady: () => void }> = ({
+  spin,
+  drag,
+  onReady,
+}) => {
   const geometry = useLoader(ForearmGeometryLoader, MESH_URL);
   const groupRef = useRef<THREE.Group>(null);
-  const { size, viewport, invalidate } = useThree();
+  const meshRef = useRef<THREE.Mesh>(null);
+  const { camera, gl, size, viewport, invalidate } = useThree();
 
   const design = useMemo(createDesignTexture, []);
 
@@ -371,8 +574,12 @@ const Forearm: React.FC<{ spin: SpinState; onReady: () => void }> = ({ spin, onR
           uSkinShadow: { value: COLORS.skinShadow },
           uSkinMid: { value: COLORS.skinMid },
           uSkinLight: { value: COLORS.skinLight },
-          uInk: { value: COLORS.ink },
+          uSubsurface: { value: COLORS.subsurface },
+          uBounce: { value: COLORS.bounce },
+          uSheen: { value: COLORS.sheen },
+          uInk: { value: INK_TINT },
           uRim: { value: COLORS.rim },
+          uLightCenter: { value: LIGHT_CENTER },
         },
       }),
     [design]
@@ -399,18 +606,94 @@ const Forearm: React.FC<{ spin: SpinState; onReady: () => void }> = ({ spin, onR
     invalidate();
   }, [material, size.width, viewport.dpr, invalidate]);
 
+  const raycaster = useRef(new THREE.Raycaster());
+  const ndc = useRef(new THREE.Vector2());
+  /** Surface-space vector from the point being held to the design's centre. */
+  const grabOffset = useRef<THREE.Vector2 | null>(null);
+
+  /** Where the pointer meets the skin, as (angle around the limb, height). */
+  const surfaceUnderPointer = useCallback(
+    (clientX: number, clientY: number): THREE.Vector2 | null => {
+      const mesh = meshRef.current;
+      if (!mesh) return null;
+
+      const rect = gl.domElement.getBoundingClientRect();
+      ndc.current.set(
+        ((clientX - rect.left) / rect.width) * 2 - 1,
+        -((clientY - rect.top) / rect.height) * 2 + 1
+      );
+      raycaster.current.setFromCamera(ndc.current, camera);
+
+      /* The material is front-sided, so this is the near face of the limb. */
+      const hit = raycaster.current.intersectObject(mesh, false)[0];
+      if (!hit) return null;
+
+      const local = mesh.worldToLocal(hit.point.clone());
+      return new THREE.Vector2(Math.atan2(local.x, local.z), local.y);
+    },
+    [camera, gl]
+  );
+
   useFrame((_, delta) => {
-    if (spin.autoSwing && !spin.dragging.current) {
-      spin.angle.current += spin.direction.current * delta * SWING_SPEED;
-      if (spin.angle.current > SWING && spin.direction.current > 0) spin.direction.current = -1;
-      if (spin.angle.current < -SWING && spin.direction.current < 0) spin.direction.current = 1;
+    if (spin.autoSwing && !spin.interacting.current) {
+      spin.phase.current += delta * SWING_SPEED;
+      /* Shed the dragged pose gradually, so the limb drifts back to the one the
+         panel was framed around instead of staying where it was left. */
+      spin.offset.current *= Math.exp(-delta * RETURN_RATE);
     }
-    if (groupRef.current) groupRef.current.rotation.y = spin.angle.current;
+    const group = groupRef.current;
+    if (group) {
+      group.rotation.y =
+        spin.offset.current + SWING_CENTER + Math.sin(spin.phase.current) * SWING;
+    }
+
+    /* Drift the camera with the pointer: a few millimetres of travel is enough
+       to part the limb from the background and give the panel some depth. */
+    if (spin.autoSwing) {
+      const hover = drag.hover.current;
+      const follow = 1 - Math.exp(-delta * PARALLAX_EASE);
+      camera.position.x += (hover.x * PARALLAX - camera.position.x) * follow;
+      camera.position.y += (-hover.y * PARALLAX * 0.6 - camera.position.y) * follow;
+      camera.lookAt(0, 0, 0);
+      camera.updateMatrixWorld();
+    }
+
+    const pointer = drag.pointer.current;
+    if (!pointer) {
+      grabOffset.current = null;
+      return;
+    }
+    /* Hit-test against the orientation just set above, not last frame's. */
+    group?.updateMatrixWorld(true);
+    const surface = surfaceUnderPointer(pointer.x, pointer.y);
+    if (!surface || surface.y < FOREARM_BOTTOM_Y) return;
+
+    const center = material.uniforms.uDesignCenter.value as THREE.Vector2;
+    if (!grabOffset.current) {
+      const offset = new THREE.Vector2(wrapAngle(center.x - surface.x), center.y - surface.y);
+      /* Taking hold of the design carries it by the point held; taking hold of
+         bare skin brings it under the cursor instead. */
+      const onDesign =
+        Math.abs(offset.x) <= DESIGN_SIZE.x / 2 && Math.abs(offset.y) <= DESIGN_SIZE.y / 2;
+      grabOffset.current = onDesign ? offset : new THREE.Vector2(0, 0);
+    }
+    center.set(
+      wrapAngle(surface.x + grabOffset.current.x),
+      THREE.MathUtils.clamp(
+        surface.y + grabOffset.current.y,
+        DESIGN_HEIGHT_MIN,
+        DESIGN_HEIGHT_MAX
+      )
+    );
   });
 
+  /* Two groups so the sweep turns the limb about its own axis and the lean is
+     applied to the result; as one Euler the lean would make the sweep wobble. */
   return (
-    <group ref={groupRef}>
-      <mesh geometry={geometry} material={material} />
+    <group rotation-z={LIMB_TILT}>
+      <group ref={groupRef}>
+        <mesh ref={meshRef} geometry={geometry} material={material} />
+      </group>
     </group>
   );
 };
@@ -435,19 +718,28 @@ class PreviewBoundary extends React.Component<
   }
 }
 
+/** ⌘ on a Mac, Ctrl elsewhere: hold to move the design instead of the limb. */
+function movesDesign(e: { metaKey: boolean; ctrlKey: boolean }): boolean {
+  return e.metaKey || e.ctrlKey;
+}
+
 export const HeroPreview: React.FC = () => {
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
   const [visible, setVisible] = useState(true);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
-  const angle = useRef(0);
-  const direction = useRef(1);
-  const dragging = useRef(false);
+  const phase = useRef(0);
+  const offset = useRef(0);
+  const interacting = useRef(false);
   const lastX = useRef(0);
+  const pointer = useRef<{ x: number; y: number } | null>(null);
+  const hover = useRef(new THREE.Vector2());
   const [autoSwing, setAutoSwing] = useState(true);
-  const [dragActive, setDragActive] = useState(false);
-  const spin: SpinState = { angle, direction, dragging, autoSwing };
+  const [dragMode, setDragMode] = useState<'rotate' | 'design' | null>(null);
+  const [modifierHeld, setModifierHeld] = useState(false);
+  const spin: SpinState = { phase, offset, interacting, autoSwing };
+  const drag: DesignDrag = { pointer, hover };
   const handleReady = useCallback(() => setReady(true), []);
   const handleFail = useCallback(() => setFailed(true), []);
 
@@ -471,43 +763,93 @@ export const HeroPreview: React.FC = () => {
     return () => observer.disconnect();
   }, []);
 
+  /* So the cursor can advertise the design drag before the pointer goes down.
+     Cleared on blur, since ⌘-tabbing away swallows the keyup. */
+  useEffect(() => {
+    const sync = (e: KeyboardEvent) => setModifierHeld(movesDesign(e));
+    const clear = () => setModifierHeld(false);
+    window.addEventListener('keydown', sync);
+    window.addEventListener('keyup', sync);
+    window.addEventListener('blur', clear);
+    return () => {
+      window.removeEventListener('keydown', sync);
+      window.removeEventListener('keyup', sync);
+      window.removeEventListener('blur', clear);
+    };
+  }, []);
+
   const startDrag = (e: React.PointerEvent<HTMLDivElement>) => {
-    dragging.current = true;
+    interacting.current = true;
+    if (movesDesign(e)) {
+      /* Without this the modified drag is taken as a text selection. */
+      e.preventDefault();
+      pointer.current = { x: e.clientX, y: e.clientY };
+      setDragMode('design');
+      return;
+    }
     lastX.current = e.clientX;
-    setDragActive(true);
+    setDragMode('rotate');
   };
 
-  /* Tracked on the window so a drag survives the pointer leaving the panel. */
+  const trackHover = (e: React.PointerEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    hover.current.set(
+      ((e.clientX - rect.left) / rect.width) * 2 - 1,
+      ((e.clientY - rect.top) / rect.height) * 2 - 1
+    );
+  };
+  const clearHover = () => hover.current.set(0, 0);
+
+  /* Tracked on the window so a drag survives the pointer leaving the panel. The
+     mode is fixed at the press, so releasing ⌘ mid-drag won't swap modes. */
   useEffect(() => {
-    if (!dragActive) return;
+    if (!dragMode) return;
 
     const onMove = (e: PointerEvent) => {
-      angle.current += (e.clientX - lastX.current) * DRAG_SENSITIVITY;
+      if (dragMode === 'design') {
+        pointer.current = { x: e.clientX, y: e.clientY };
+        return;
+      }
+      offset.current += (e.clientX - lastX.current) * DRAG_SENSITIVITY;
       lastX.current = e.clientX;
     };
     const onEnd = () => {
-      dragging.current = false;
-      direction.current = angle.current > 0 ? -1 : 1;
-      setDragActive(false);
+      interacting.current = false;
+      pointer.current = null;
+      setDragMode(null);
     };
 
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onEnd);
     window.addEventListener('pointercancel', onEnd);
+    /* A context menu or a switch of window can swallow the release. */
+    window.addEventListener('contextmenu', onEnd);
+    window.addEventListener('blur', onEnd);
     return () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onEnd);
       window.removeEventListener('pointercancel', onEnd);
+      window.removeEventListener('contextmenu', onEnd);
+      window.removeEventListener('blur', onEnd);
     };
-  }, [dragActive]);
+  }, [dragMode]);
 
   const showFallback = failed || !ready;
+  const designMode = dragMode === 'design' || (modifierHeld && !dragMode);
 
   return (
     <div
-      className={showFallback ? 'hero-preview' : 'hero-preview hero-preview--live'}
+      className={[
+        'hero-preview',
+        showFallback ? '' : 'hero-preview--live',
+        !showFallback && designMode ? 'hero-preview--move' : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
       ref={wrapperRef}
       onPointerDown={showFallback ? undefined : startDrag}
+      onPointerMove={showFallback ? undefined : trackHover}
+      onPointerLeave={showFallback ? undefined : clearHover}
     >
       {showFallback && (
         <div className="hero-preview-fallback">
@@ -519,14 +861,14 @@ export const HeroPreview: React.FC = () => {
         <PreviewBoundary onFail={handleFail}>
           <Canvas
             className="hero-preview-canvas"
-            camera={{ position: [0, 0, CAMERA_DISTANCE], fov: 30 }}
+            camera={{ position: [0, 0, CAMERA_DISTANCE], fov: CAMERA_FOV }}
             dpr={[1, 2]}
-            frameloop={visible ? (autoSwing || dragActive ? 'always' : 'demand') : 'never'}
+            frameloop={visible ? (autoSwing || dragMode ? 'always' : 'demand') : 'never'}
             gl={{ antialias: true, alpha: true }}
             style={{ opacity: ready ? 1 : 0 }}
           >
             <Suspense fallback={null}>
-              <Forearm spin={spin} onReady={handleReady} />
+              <Forearm spin={spin} drag={drag} onReady={handleReady} />
             </Suspense>
           </Canvas>
         </PreviewBoundary>
@@ -534,10 +876,13 @@ export const HeroPreview: React.FC = () => {
 
       {!showFallback && (
         <>
+          <span className="hero-preview-defocus" aria-hidden />
           <span className="hero-preview-divider" aria-hidden />
           <span className="hero-preview-label hero-preview-label--mesh">mesh</span>
           <span className="hero-preview-label hero-preview-label--render">render</span>
-          <span className="hero-preview-hint">drag to rotate</span>
+          <span className="hero-preview-hint">
+            {designMode ? 'drag to move the design' : 'drag to rotate · ⌘ drag to move'}
+          </span>
         </>
       )}
     </div>
