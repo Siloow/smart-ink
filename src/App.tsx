@@ -599,12 +599,7 @@ function App() {
   }, [showRenderHistory])
 
   if (gateView === 'landing') {
-    return (
-      <LandingPage
-        onNavigateToLogin={() => setGateView('login')}
-        onOpenAdmin={() => setGateView('admin')}
-      />
-    )
+    return <LandingPage onNavigateToLogin={() => setGateView('login')} />
   }
 
   if (gateView === 'admin') {
@@ -661,12 +656,7 @@ function App() {
   }
 
   if (!betaAuth.session) {
-    return (
-      <LandingPage
-        onNavigateToLogin={() => setGateView('login')}
-        onOpenAdmin={() => setGateView('admin')}
-      />
-    )
+    return <LandingPage onNavigateToLogin={() => setGateView('login')} />
   }
 
   if (showDashboard) {
