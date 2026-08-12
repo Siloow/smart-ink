@@ -324,6 +324,12 @@ body {
   cursor: grabbing;
 }
 
+/* Outranks the grab cursors above while the design is the thing being moved. */
+.hero-preview--live.hero-preview--move,
+.hero-preview--live.hero-preview--move:active {
+  cursor: move;
+}
+
 .hero-preview-canvas {
   position: absolute;
   inset: 0;
@@ -352,10 +358,42 @@ body {
   background: linear-gradient(to bottom, var(--bg-primary) 10%, transparent);
 }
 
+/*
+ * Lighter than the top fade: the limb ends in a hand here rather than being cut
+ * off mid-shaft, so there is a real subject to keep out of the gradient.
+ */
 .hero-preview::after {
   bottom: 0;
-  height: 25%;
-  background: linear-gradient(to top, var(--bg-primary) 32%, transparent);
+  height: 15%;
+  background: linear-gradient(to top, var(--bg-primary) 22%, transparent);
+}
+
+/*
+ * Depth of field, without a second render pass: the crop edges are blurred
+ * through the mask's ramp, leaving the middle of the frame — where the design
+ * sits — in focus. The labels sit above this layer, so they stay sharp.
+ */
+.hero-preview-defocus {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  mask-image: linear-gradient(
+    to bottom,
+    #000 0%,
+    transparent 22%,
+    transparent 74%,
+    #000 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    #000 0%,
+    transparent 22%,
+    transparent 74%,
+    #000 100%
+  );
 }
 
 .hero-preview-divider {
@@ -401,6 +439,7 @@ body {
   left: 50%;
   transform: translateX(-50%);
   opacity: 0.75;
+  white-space: nowrap;
 }
 
 .pipe-figure-tick {
