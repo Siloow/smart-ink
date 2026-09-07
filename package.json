@@ -15,6 +15,7 @@
   "dependencies": {
     "@react-three/drei": "^10.3.0",
     "@react-three/fiber": "^9.1.2",
+    "@supabase/supabase-js": "^2.116.0",
     "@types/three": "^0.177.0",
     "idb-keyval": "^6.2.4",
     "react": "^19.1.0",

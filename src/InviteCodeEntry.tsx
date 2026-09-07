@@ -8,17 +8,27 @@ interface InviteCodeEntryProps {
 
 export default function InviteCodeEntry({ onBack, onContinue }: InviteCodeEntryProps) {
   const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
     const normalized = code.trim().toUpperCase();
-    if (!getInvite(normalized)) {
-      setError('That invite code is not valid.');
-      return;
+    if (!normalized) return;
+    setBusy(true);
+    try {
+      const invite = await getInvite(normalized);
+      if (!invite) {
+        setError('That invite code is not valid.');
+        return;
+      }
+      onContinue(normalized);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not check that code.');
+    } finally {
+      setBusy(false);
     }
-    onContinue(normalized);
   };
 
   return (
@@ -44,8 +54,8 @@ export default function InviteCodeEntry({ onBack, onContinue }: InviteCodeEntryP
             autoComplete="off"
           />
           {error && <p className="beta-error">{error}</p>}
-          <button type="submit" className="btn-cta" style={{ width: '100%' }}>
-            Continue
+          <button type="submit" className="btn-cta" disabled={busy} style={{ width: '100%' }}>
+            {busy ? 'Checking…' : 'Continue'}
           </button>
         </form>
       </div>

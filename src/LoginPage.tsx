@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import {
-  DEMO_EMAIL_CODE,
+  authMode,
   DEV_ADMIN_HANDLE,
   isDevAdminHandle,
   requestEmailCode,
@@ -14,51 +14,75 @@ export interface LoginPageProps {
   onAuthenticated: (session: BetaSession) => void;
   onBackToLanding?: () => void;
   onOpenInvite?: () => void;
+  /** Shown above the form, e.g. after a Google sign-in for an email without access. */
+  notice?: string | null;
 }
 
-export default function LoginPage({ onAuthenticated, onBackToLanding, onOpenInvite }: LoginPageProps) {
+type Busy = 'google' | 'code' | 'verify' | null;
+
+export default function LoginPage({ onAuthenticated, onBackToLanding, onOpenInvite, notice }: LoginPageProps) {
+  const mode = authMode();
+  const unconfigured = mode === 'unconfigured';
   const [email, setEmail] = useState('');
   const [otp, setOtp] = useState('');
-  const [demoCodeVisible, setDemoCodeVisible] = useState(false);
+  const [codeSent, setCodeSent] = useState(false);
+  const [demoCode, setDemoCode] = useState<string | null>(null);
+  const [busy, setBusy] = useState<Busy>(null);
   const [error, setError] = useState<string | null>(null);
 
-  /** Dev shortcut: `admin` in the email field signs in without a code. */
-  const tryDevAdmin = (): boolean => {
+  const run = async (kind: Exclude<Busy, null>, fn: () => Promise<void>, fallback: string) => {
+    setError(null);
+    setBusy(kind);
+    try {
+      await fn();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : fallback);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  /** Dev shortcut (demo backend only): `admin` in the email field signs straight in. */
+  const tryDevAdmin = async (): Promise<boolean> => {
     if (!isDevAdminHandle(email)) return false;
-    onAuthenticated(signInAsDevAdmin());
+    onAuthenticated(await signInAsDevAdmin());
     return true;
   };
 
-  const handleGoogle = () => {
-    setError(null);
-    try {
-      if (tryDevAdmin()) return;
-      onAuthenticated(signInWithGoogle(email));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not sign in with Google.');
-    }
-  };
+  const handleGoogle = () =>
+    run(
+      'google',
+      async () => {
+        if (await tryDevAdmin()) return;
+        const session = await signInWithGoogle(email);
+        // null means the browser is on its way to Google.
+        if (session) onAuthenticated(session);
+      },
+      'Could not sign in with Google.'
+    );
 
-  const handleSendCode = () => {
-    setError(null);
-    try {
-      if (tryDevAdmin()) return;
-      requestEmailCode(email);
-      setDemoCodeVisible(true);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not send code.');
-    }
-  };
+  const handleSendCode = () =>
+    run(
+      'code',
+      async () => {
+        if (await tryDevAdmin()) return;
+        const result = await requestEmailCode(email);
+        setDemoCode(result.demoCode ?? null);
+        setCodeSent(true);
+      },
+      'Could not send code.'
+    );
 
   const handleVerify = (e: FormEvent) => {
     e.preventDefault();
-    setError(null);
-    try {
-      if (tryDevAdmin()) return;
-      onAuthenticated(verifyEmailCode(email, otp));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not verify code.');
-    }
+    void run(
+      'verify',
+      async () => {
+        if (await tryDevAdmin()) return;
+        onAuthenticated(await verifyEmailCode(email, otp));
+      },
+      'Could not verify code.'
+    );
   };
 
   return (
@@ -81,6 +105,19 @@ export default function LoginPage({ onAuthenticated, onBackToLanding, onOpenInvi
           <p className="login-subtitle">
             Sign in only if you’ve been invited. New here? Request access from the landing page.
           </p>
+
+          {notice && (
+            <div className="beta-banner beta-banner--error" role="alert" style={{ marginBottom: 12 }}>
+              {notice}
+            </div>
+          )}
+          {unconfigured && (
+            <div className="beta-banner" style={{ marginBottom: 12 }}>
+              Sign-in isn’t set up on this deployment yet. Request access from the landing page and
+              we’ll email you when it opens.
+            </div>
+          )}
+
           <label className="beta-label" htmlFor="login-email">
             Email
           </label>
@@ -92,26 +129,46 @@ export default function LoginPage({ onAuthenticated, onBackToLanding, onOpenInvi
             autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            disabled={unconfigured}
             aria-label="Email"
           />
-          <button type="button" className="btn-google" onClick={handleGoogle}>
-            <span className="g-icon">G</span> Continue with Google
+          <button
+            type="button"
+            className="btn-google"
+            onClick={handleGoogle}
+            disabled={busy !== null || unconfigured}
+          >
+            <span className="g-icon">G</span>{' '}
+            {busy === 'google' ? 'Opening Google…' : 'Continue with Google'}
           </button>
           <div className="login-divider" />
-          <button type="button" className="btn-continue" onClick={handleSendCode}>
-            Email me a code
+          <button
+            type="button"
+            className="btn-continue"
+            onClick={handleSendCode}
+            disabled={busy !== null || unconfigured}
+          >
+            {busy === 'code' ? 'Sending…' : codeSent ? 'Send a new code' : 'Email me a code'}
           </button>
-          {import.meta.env.DEV && (
+
+          {mode === 'demo' && (
             <div className="beta-banner" style={{ marginTop: 12 }}>
-              Dev only — type <strong>{DEV_ADMIN_HANDLE}</strong> as the email to sign in as
-              super admin.
+              Local demo backend — type <strong>{DEV_ADMIN_HANDLE}</strong> as the email to sign in
+              as super admin.
             </div>
           )}
-          {demoCodeVisible && (
-            <div className="beta-banner" style={{ marginTop: 12 }}>
-              Demo only — code is <strong>{DEMO_EMAIL_CODE}</strong> (email delivery comes later).
-            </div>
-          )}
+          {codeSent &&
+            (demoCode ? (
+              <div className="beta-banner" style={{ marginTop: 12 }}>
+                Demo only — the code is <strong>{demoCode}</strong>. Nothing is emailed by the
+                local backend.
+              </div>
+            ) : (
+              <p className="beta-muted" style={{ marginTop: 12 }} role="status">
+                We emailed a 6-digit code to <strong>{email.trim()}</strong>. Enter it below.
+              </p>
+            ))}
+
           <form onSubmit={handleVerify} className="beta-otp-row" style={{ marginTop: 12 }}>
             <input
               className="login-input"
@@ -120,13 +177,15 @@ export default function LoginPage({ onAuthenticated, onBackToLanding, onOpenInvi
               placeholder="6-digit code"
               value={otp}
               onChange={(e) => setOtp(e.target.value)}
+              disabled={unconfigured}
               aria-label="Sign-in code"
             />
-            <button type="submit" className="btn-continue">
-              Verify
+            <button type="submit" className="btn-continue" disabled={busy !== null || unconfigured}>
+              {busy === 'verify' ? 'Checking…' : 'Verify'}
             </button>
           </form>
           {error && <p className="beta-error">{error}</p>}
+
           <div className="login-footer">
             Have an invite code?{' '}
             {onOpenInvite ? (

@@ -1,5 +1,6 @@
 import React, { useId, useState, type FormEvent, type ReactNode } from 'react';
-import { requestBetaAccess } from './auth/betaAuthService';
+import { authMode, requestBetaAccess } from './auth/betaAuthService';
+import type { RequestAccessResult } from './auth/types';
 import {
   CONTACT_EMAIL,
   isWaitlistEndpointConfigured,
@@ -101,9 +102,9 @@ const RequestAccessForm: React.FC<{ source: string; buttonLabel: string }> = ({
     setState('sending');
     setMessage('');
 
-    let recorded: ReturnType<typeof requestBetaAccess>;
+    let recorded: RequestAccessResult;
     try {
-      recorded = requestBetaAccess(email);
+      recorded = await requestBetaAccess(email, { source, referrer: document.referrer });
     } catch (err) {
       setState('error');
       setMessage(err instanceof Error ? err.message : 'Could not send your request.');
@@ -111,13 +112,21 @@ const RequestAccessForm: React.FC<{ source: string; buttonLabel: string }> = ({
     }
 
     if (recorded.already) {
-      const hasAccess = recorded.entry.status === 'active' || recorded.entry.status === 'invited';
+      const hasAccess = recorded.status === 'active' || recorded.status === 'invited';
       setState('already');
       setMessage(
         hasAccess
           ? 'You already have access — log in with that email.'
           : 'You’re already on the list. We’ll be in touch when a seat opens.'
       );
+      return;
+    }
+
+    // With the hosted backend the request is already in the database.
+    if (authMode() === 'supabase') {
+      setState('joined');
+      setMessage('You’re on the list. We’ll email an invite when a seat opens.');
+      setEmail('');
       return;
     }
 

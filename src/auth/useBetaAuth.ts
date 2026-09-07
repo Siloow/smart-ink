@@ -3,56 +3,91 @@ import * as betaAuth from './betaAuthService';
 import type { BetaSession, Invite, WaitlistEntry } from './types';
 
 export function useBetaAuth() {
-  const [session, setSession] = useState<BetaSession | null>(() => betaAuth.getSession());
+  /** False until the backend has reported the initial session. */
+  const [ready, setReady] = useState(false);
+  const [session, setSessionState] = useState<BetaSession | null>(null);
+  const [accessError, setAccessError] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [waitlist, setWaitlist] = useState<WaitlistEntry[]>([]);
   const [invites, setInvites] = useState<Invite[]>([]);
   const [activeEmails, setActiveEmails] = useState<string[]>([]);
-  const [adminUnlocked, setAdminUnlocked] = useState(() => betaAuth.adminIsUnlocked());
-
-  const refreshAdminData = useCallback(() => {
-    if (!betaAuth.adminIsUnlocked()) return;
-    setWaitlist(betaAuth.listWaitlist());
-    setInvites(betaAuth.listInvites());
-    setActiveEmails(betaAuth.listActiveEmails());
-  }, []);
+  const [adminError, setAdminError] = useState<string | null>(null);
 
   useEffect(() => {
-    setSession(betaAuth.getSession());
+    return betaAuth.subscribeSession((state) => {
+      setSessionState(state.session);
+      setAccessError(state.accessError);
+      setReady(true);
+    });
   }, []);
 
-  const logout = useCallback(() => {
-    betaAuth.logout();
-    setSession(null);
+  // The operator flag follows the session (profiles.is_admin on Supabase, a
+  // sessionStorage flag in the demo backend).
+  useEffect(() => {
+    let cancelled = false;
+    void betaAuth.isAdmin().then((v) => {
+      if (!cancelled) setIsAdmin(v);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [session]);
+
+  const refreshAdminData = useCallback(async () => {
+    try {
+      const [w, i, a] = await Promise.all([
+        betaAuth.listWaitlist(),
+        betaAuth.listInvites(),
+        betaAuth.listActiveEmails(),
+      ]);
+      setWaitlist(w);
+      setInvites(i);
+      setActiveEmails(a);
+      setAdminError(null);
+    } catch (err) {
+      setAdminError(err instanceof Error ? err.message : 'Could not load operator data.');
+    }
   }, []);
 
-  const refreshSession = useCallback(() => {
-    setSession(betaAuth.getSession());
+  /** Pages call this with the session a sign-in just returned. */
+  const setSession = useCallback((next: BetaSession | null) => {
+    setSessionState(next);
+    setAccessError(null);
   }, []);
 
-  const unlockAdmin = useCallback(
-    (passphrase: string) => {
-      betaAuth.unlockAdmin(passphrase);
-      setAdminUnlocked(true);
-      refreshAdminData();
-    },
-    [refreshAdminData]
-  );
+  const signOut = useCallback(async (opts?: { everywhere?: boolean }) => {
+    try {
+      await betaAuth.signOut(opts);
+    } finally {
+      setSessionState(null);
+    }
+  }, []);
+
+  const unlockAdmin = useCallback(async (passphrase: string) => {
+    await betaAuth.unlockAdmin(passphrase);
+    setIsAdmin(true);
+  }, []);
 
   const lockAdmin = useCallback(() => {
     betaAuth.lockAdmin();
-    setAdminUnlocked(false);
+    setIsAdmin(false);
   }, []);
 
+  const clearAccessError = useCallback(() => setAccessError(null), []);
+
   return {
+    ready,
     session,
     setSession,
+    accessError,
+    clearAccessError,
+    isAdmin,
     waitlist,
     invites,
     activeEmails,
-    adminUnlocked,
-    logout,
-    refreshSession,
+    adminError,
     refreshAdminData,
+    signOut,
     unlockAdmin,
     lockAdmin,
   };

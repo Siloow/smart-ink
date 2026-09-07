@@ -1,13 +1,12 @@
-import { useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import {
-  DEMO_EMAIL_CODE,
   getInvite,
   redeemInvite,
   requestEmailCode,
   signInWithGoogle,
   verifyEmailCode,
 } from './auth/betaAuthService';
-import type { BetaSession } from './auth/types';
+import type { BetaSession, InvitePreview } from './auth/types';
 
 export interface InvitePageProps {
   code: string;
@@ -16,62 +15,96 @@ export interface InvitePageProps {
 }
 
 type Step = 'redeem' | 'signin';
+type Busy = 'redeem' | 'google' | 'code' | 'verify' | null;
 
 export default function InvitePage({ code, onBack, onAuthenticated }: InvitePageProps) {
-  const invite = useMemo(() => getInvite(code), [code]);
-  const [email, setEmail] = useState(invite?.email ?? '');
+  /** undefined while the lookup is in flight, null when the code is unknown. */
+  const [invite, setInvite] = useState<InvitePreview | null | undefined>(undefined);
+  const [email, setEmail] = useState('');
   const [step, setStep] = useState<Step>('redeem');
   const [otp, setOtp] = useState('');
+  const [codeSent, setCodeSent] = useState(false);
   const [demoCode, setDemoCode] = useState<string | null>(null);
+  const [busy, setBusy] = useState<Busy>(null);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setInvite(undefined);
+    setError(null);
+    getInvite(code)
+      .then((found) => {
+        if (cancelled) return;
+        setInvite(found);
+        if (found?.email) setEmail(found.email);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setInvite(null);
+        setError(err instanceof Error ? err.message : 'Could not look up that invite.');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [code]);
 
   const expired = invite ? Date.now() > invite.expiresAt : false;
-  const used = Boolean(invite?.redeemedAt);
+  const used = Boolean(invite?.redeemed);
+
+  const run = async (kind: Exclude<Busy, null>, fn: () => Promise<void>, fallback: string) => {
+    setError(null);
+    setBusy(kind);
+    try {
+      await fn();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : fallback);
+    } finally {
+      setBusy(null);
+    }
+  };
 
   const handleRedeem = (e: FormEvent) => {
     e.preventDefault();
-    setError(null);
-    setBusy(true);
-    try {
-      redeemInvite(code, email);
-      setStep('signin');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not redeem invite.');
-    } finally {
-      setBusy(false);
-    }
+    void run(
+      'redeem',
+      async () => {
+        await redeemInvite(code, email);
+        setStep('signin');
+      },
+      'Could not redeem invite.'
+    );
   };
 
-  const handleGoogle = () => {
-    setError(null);
-    try {
-      const session = signInWithGoogle(email);
-      onAuthenticated(session);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Google sign-in failed.');
-    }
-  };
+  const handleGoogle = () =>
+    run(
+      'google',
+      async () => {
+        const session = await signInWithGoogle(email);
+        if (session) onAuthenticated(session);
+      },
+      'Google sign-in failed.'
+    );
 
-  const handleSendCode = () => {
-    setError(null);
-    try {
-      const result = requestEmailCode(email);
-      setDemoCode(result.demoCode);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not send code.');
-    }
-  };
+  const handleSendCode = () =>
+    run(
+      'code',
+      async () => {
+        const result = await requestEmailCode(email);
+        setDemoCode(result.demoCode ?? null);
+        setCodeSent(true);
+      },
+      'Could not send code.'
+    );
 
   const handleVerify = (e: FormEvent) => {
     e.preventDefault();
-    setError(null);
-    try {
-      const session = verifyEmailCode(email, otp);
-      onAuthenticated(session);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not verify code.');
-    }
+    void run(
+      'verify',
+      async () => {
+        onAuthenticated(await verifyEmailCode(email, otp));
+      },
+      'Could not verify code.'
+    );
   };
 
   return (
@@ -89,13 +122,16 @@ export default function InvitePage({ code, onBack, onAuthenticated }: InvitePage
               {' '}
               reserved for <strong>{invite.email}</strong>
             </>
-          ) : (
+          ) : invite === undefined ? null : (
             <> — enter the email you’ll use to sign in.</>
           )}
         </p>
 
-        {!invite && (
-          <div className="beta-banner beta-banner--error">This invite code was not found.</div>
+        {invite === undefined && <p className="beta-muted">Checking your invite…</p>}
+        {invite === null && (
+          <div className="beta-banner beta-banner--error">
+            {error ?? 'This invite code was not found.'}
+          </div>
         )}
         {invite && expired && (
           <div className="beta-banner beta-banner--error">This invite has expired.</div>
@@ -121,8 +157,13 @@ export default function InvitePage({ code, onBack, onAuthenticated }: InvitePage
               readOnly={Boolean(invite.email)}
             />
             {error && <p className="beta-error">{error}</p>}
-            <button type="submit" className="btn-cta" disabled={busy} style={{ width: '100%' }}>
-              {busy ? 'Checking…' : 'Accept invite'}
+            <button
+              type="submit"
+              className="btn-cta"
+              disabled={busy !== null}
+              style={{ width: '100%' }}
+            >
+              {busy === 'redeem' ? 'Checking…' : 'Accept invite'}
             </button>
           </form>
         )}
@@ -130,18 +171,35 @@ export default function InvitePage({ code, onBack, onAuthenticated }: InvitePage
         {step === 'signin' && (
           <div className="beta-form">
             <p className="beta-muted">Invite accepted for {email}. Finish signing in.</p>
-            <button type="button" className="btn-google" onClick={handleGoogle}>
-              <span className="g-icon">G</span> Continue with Google
+            <button
+              type="button"
+              className="btn-google"
+              onClick={handleGoogle}
+              disabled={busy !== null}
+            >
+              <span className="g-icon">G</span>{' '}
+              {busy === 'google' ? 'Opening Google…' : 'Continue with Google'}
             </button>
             <div className="login-divider" />
-            <button type="button" className="btn-continue" onClick={handleSendCode}>
-              Email me a code
+            <button
+              type="button"
+              className="btn-continue"
+              onClick={handleSendCode}
+              disabled={busy !== null}
+            >
+              {busy === 'code' ? 'Sending…' : codeSent ? 'Send a new code' : 'Email me a code'}
             </button>
-            {demoCode && (
-              <div className="beta-banner">
-                Demo only — your code is <strong>{DEMO_EMAIL_CODE}</strong> (no email sent yet).
-              </div>
-            )}
+            {codeSent &&
+              (demoCode ? (
+                <div className="beta-banner">
+                  Demo only — the code is <strong>{demoCode}</strong>. Nothing is emailed by the
+                  local backend.
+                </div>
+              ) : (
+                <p className="beta-muted" role="status">
+                  We emailed a 6-digit code to <strong>{email.trim()}</strong>. Enter it below.
+                </p>
+              ))}
             <form onSubmit={handleVerify} className="beta-otp-row">
               <input
                 className="login-input"
@@ -152,8 +210,8 @@ export default function InvitePage({ code, onBack, onAuthenticated }: InvitePage
                 onChange={(e) => setOtp(e.target.value)}
                 aria-label="Sign-in code"
               />
-              <button type="submit" className="btn-continue">
-                Verify
+              <button type="submit" className="btn-continue" disabled={busy !== null}>
+                {busy === 'verify' ? 'Checking…' : 'Verify'}
               </button>
             </form>
             {error && <p className="beta-error">{error}</p>}

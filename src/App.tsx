@@ -1,10 +1,11 @@
-import { lazy, Suspense, useCallback, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import LandingPage from './LandingPage'
 import LoginPage from './LoginPage'
 import InvitePage from './InvitePage'
 import InviteCodeEntry from './InviteCodeEntry'
 import BetaAdminPage from './BetaAdminPage'
 import { useBetaAuth } from './auth/useBetaAuth'
+import { authMode } from './auth/betaAuthService'
 import type { BetaSession } from './auth/types'
 
 /**
@@ -27,12 +28,26 @@ function initialGateView(): { view: GateView; inviteCode: string | null } {
 
 function App() {
   const betaAuth = useBetaAuth()
-  const [gateView, setGateView] = useState<GateView>(() => {
-    const boot = initialGateView()
-    if (betaAuth.session && boot.view !== 'invite' && boot.view !== 'admin') return 'app'
-    return boot.view
-  })
+  const [gateView, setGateView] = useState<GateView>(() => initialGateView().view)
   const [inviteCode, setInviteCode] = useState<string | null>(() => initialGateView().inviteCode)
+  const bootedRef = useRef(false)
+
+  // Once the backend has reported the initial session, route past the landing
+  // page: straight into the app for a signed-in user, or to the login page
+  // with a reason when someone came back from Google without beta access.
+  useEffect(() => {
+    if (!betaAuth.ready || bootedRef.current) return
+    bootedRef.current = true
+    const boot = initialGateView()
+    if (boot.view === 'invite' || boot.view === 'admin') return
+    if (betaAuth.session) setGateView('app')
+    else if (betaAuth.accessError) setGateView('login')
+  }, [betaAuth.ready, betaAuth.session, betaAuth.accessError])
+
+  // Signed out from another tab or via "sign out everywhere".
+  useEffect(() => {
+    if (betaAuth.ready && gateView === 'app' && !betaAuth.session) setGateView('landing')
+  }, [betaAuth.ready, betaAuth.session, gateView])
 
   const clearInviteQuery = useCallback(() => {
     const url = new URL(window.location.href)
@@ -53,16 +68,25 @@ function App() {
     [setBetaSession, clearInviteQuery]
   )
 
+  const clearAccessError = betaAuth.clearAccessError
   const goHome = useCallback(() => {
     clearInviteQuery()
+    clearAccessError()
     setGateView('landing')
-  }, [clearInviteQuery])
+  }, [clearInviteQuery, clearAccessError])
 
-  const logout = betaAuth.logout
-  const signOut = useCallback(() => {
-    logout()
-    goHome()
-  }, [logout, goHome])
+  const betaSignOut = betaAuth.signOut
+  const signOut = useCallback(
+    async (opts?: { everywhere?: boolean }) => {
+      await betaSignOut(opts)
+      goHome()
+    },
+    [betaSignOut, goHome]
+  )
+
+  if (!betaAuth.ready) {
+    return <div className="app-loading">Checking access…</div>
+  }
 
   if (gateView === 'landing') {
     return <LandingPage onNavigateToLogin={() => setGateView('login')} />
@@ -71,14 +95,19 @@ function App() {
   if (gateView === 'admin') {
     return (
       <BetaAdminPage
-        unlocked={betaAuth.adminUnlocked}
+        mode={authMode()}
+        session={betaAuth.session}
+        unlocked={betaAuth.isAdmin}
         waitlist={betaAuth.waitlist}
         invites={betaAuth.invites}
         activeEmails={betaAuth.activeEmails}
+        loadError={betaAuth.adminError}
         onUnlock={betaAuth.unlockAdmin}
         onLock={betaAuth.lockAdmin}
         onRefresh={betaAuth.refreshAdminData}
         onBack={goHome}
+        onGoLogin={() => setGateView('login')}
+        onSignOut={() => void signOut()}
       />
     )
   }
@@ -105,6 +134,7 @@ function App() {
         onAuthenticated={enterApp}
         onBackToLanding={goHome}
         onOpenInvite={() => setGateView('invite-code')}
+        notice={betaAuth.accessError}
       />
     )
   }
@@ -116,7 +146,7 @@ function App() {
 
   return (
     <Suspense fallback={<div className="app-loading">Loading Smart Ink…</div>}>
-      <Workspace session={session} onHome={goHome} onSignOut={signOut} />
+      <Workspace session={session} onHome={goHome} onSignOut={(opts) => void signOut(opts)} />
     </Suspense>
   )
 }

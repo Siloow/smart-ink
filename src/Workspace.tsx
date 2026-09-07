@@ -104,7 +104,8 @@ interface WorkspaceProps {
   session: BetaSession
   /** Leave the workspace for the landing page. */
   onHome: () => void
-  onSignOut: () => void
+  /** `everywhere` also revokes the account's sessions on other devices. */
+  onSignOut: (opts?: { everywhere?: boolean }) => void
 }
 
 /**
@@ -115,6 +116,7 @@ interface WorkspaceProps {
 export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps) {
   const [currentScene, setCurrentScene] = useState<SceneData | null>(null)
   const [showDashboard, setShowDashboard] = useState(true)
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false)
 
   // Editor state (mirrors SceneData)
   const [uploadedImage, setUploadedImage] = useState<string | null>(null)
@@ -574,6 +576,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        setAccountMenuOpen(false)
         if (showRenderHistory) {
           setShowRenderHistory(false)
           return
@@ -624,18 +627,29 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
             </svg>
             Scenes
           </button>
-          <button
-            type="button"
-            className="tool-btn tool-btn--ghost"
-            title="Sign out"
-            onClick={() => {
-              onSignOut()
-            }}
-          >
-            Sign out
-          </button>
-          <div className="editor-toolbar-avatar" title={session.email} aria-hidden>
-            {(session.displayName?.[0] ?? 'S').toUpperCase()}
+          <div className="editor-toolbar-account">
+            <button
+              type="button"
+              className="editor-toolbar-avatar"
+              title={session.email}
+              aria-haspopup="menu"
+              aria-expanded={accountMenuOpen}
+              aria-label="Account menu"
+              onClick={() => setAccountMenuOpen((v) => !v)}
+            >
+              {(session.displayName?.[0] ?? 'S').toUpperCase()}
+            </button>
+            {accountMenuOpen && (
+              <div className="account-menu" role="menu">
+                <div className="account-menu-email">{session.email}</div>
+                <button type="button" role="menuitem" onClick={() => onSignOut()}>
+                  Sign out
+                </button>
+                <button type="button" role="menuitem" onClick={() => onSignOut({ everywhere: true })}>
+                  Sign out everywhere
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </header>
