@@ -77,6 +77,21 @@ Leave Blender open. The viewport rebuilds when `contract.json` or `ink.png` chan
 
 ---
 
+## Beta gate in development
+
+Without `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` in `.env.local`, `npm run dev`
+uses a browser-local demo gate: waitlist, invites and sessions live in this
+browser's localStorage and nothing is emailed.
+
+| Shortcut | Effect |
+|----------|--------|
+| Type `admin` as the login email | Signs in as super admin and unlocks `/?admin=1` |
+| Passphrase `smartink-beta` on `/?admin=1` | Unlocks the operator console without signing in |
+| Sign-in code `482913` | Accepted for any invited email (shown on the page) |
+
+Production builds without Supabase disable sign-in. To run the real gate
+locally, follow `docs/supabase-setup.md` and put the two variables in `.env.local`.
+
 ## Smaller workflows
 
 ### Browser preview only
