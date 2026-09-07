@@ -117,14 +117,15 @@ function App() {
     }
   }, [])
 
+  const setBetaSession = betaAuth.setSession
   const enterApp = useCallback(
-    (session?: Parameters<typeof betaAuth.setSession>[0] | null) => {
-      if (session) betaAuth.setSession(session)
+    (session?: Parameters<typeof setBetaSession>[0] | null) => {
+      if (session) setBetaSession(session)
       clearInviteQuery()
       setGateView('app')
       setShowDashboard(true)
     },
-    [betaAuth.setSession, clearInviteQuery]
+    [setBetaSession, clearInviteQuery]
   )
 
   const goHome = useCallback(() => {
@@ -329,6 +330,9 @@ function App() {
       void updateScene(updated).then(() => setCurrentScene(updated))
     }, 250)
     return () => clearTimeout(id)
+    // currentScene is deliberately not a dependency: this effect writes it, so
+    // including it would re-run on every save and loop forever.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uploadedImage, model, decalVisible, decalRotation, decalScale, decalColor, decalOpacity, decalPosition, decalNormal, background, lightingPreset, cameraState, bodyMeshId, skinToneId, poseId, lookId, qualityTier])
 
   // Capture thumbnail on every change
@@ -353,7 +357,7 @@ function App() {
               void updateScene(updated).then(() => setCurrentScene(updated))
             }
           }
-        } catch (e) {
+        } catch {
           // Fallback: error
           if (currentScene.thumbnail !== null) {
             const updated: SceneData = { ...currentScene, thumbnail: null }

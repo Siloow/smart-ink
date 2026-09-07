@@ -1,4 +1,3 @@
-import React from 'react';
 import { LIGHTING_PRESETS, type LightingPresetKey, type LightDefinition } from './config/lightingPresets';
 
 export type { LightingPresetKey };

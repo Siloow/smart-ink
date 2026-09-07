@@ -125,7 +125,7 @@ const fragmentShader = `
 function ensureUVs(geometry: THREE.BufferGeometry): void {
   if (geometry.attributes.uv) return;
   const pos = geometry.attributes.position;
-  if (!pos) return;
+  if (!(pos instanceof THREE.BufferAttribute)) return;
   const count = pos.count;
   const box = new THREE.Box3().setFromBufferAttribute(pos);
   const size = new THREE.Vector3();
