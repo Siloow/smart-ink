@@ -260,6 +260,46 @@ export function verifyEmailCode(rawEmail: string, code: string): BetaSession {
   return activateSession(email, 'email');
 }
 
+/**
+ * Dev-only super-admin shortcut: typing this handle in the login email field
+ * signs straight in and unlocks the operator console. Guarded by
+ * `import.meta.env.DEV`, so it is stripped from production builds.
+ */
+export const DEV_ADMIN_HANDLE = 'admin';
+const DEV_ADMIN_EMAIL = 'admin@smartink.local';
+
+export function isDevAdminHandle(rawEmail: string): boolean {
+  return import.meta.env.DEV && rawEmail.trim().toLowerCase() === DEV_ADMIN_HANDLE;
+}
+
+/** Grant the dev admin beta access, then open a session for it. */
+export function signInAsDevAdmin(): BetaSession {
+  if (!import.meta.env.DEV) {
+    throw new Error('No beta access for this email. Request an invite first.');
+  }
+
+  const snap = loadAuthSnapshot();
+  const entry = snap.waitlist.find((e) => e.email === DEV_ADMIN_EMAIL);
+  if (entry) {
+    entry.status = 'active';
+  } else {
+    snap.waitlist.unshift({
+      id: newId(),
+      email: DEV_ADMIN_EMAIL,
+      status: 'active',
+      createdAt: Date.now(),
+      invitedAt: Date.now(),
+    });
+  }
+  if (!snap.activeEmails.includes(DEV_ADMIN_EMAIL)) {
+    snap.activeEmails.push(DEV_ADMIN_EMAIL);
+  }
+  saveAuthSnapshot(snap);
+
+  setAdminUnlocked(true);
+  return activateSession(DEV_ADMIN_EMAIL, 'email', 'Admin');
+}
+
 export function inviteUrl(code: string, origin = window.location.origin): string {
   const url = new URL(origin);
   url.searchParams.set('invite', code);

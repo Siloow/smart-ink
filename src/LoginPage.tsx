@@ -1,7 +1,10 @@
 import { useState, type FormEvent } from 'react';
 import {
   DEMO_EMAIL_CODE,
+  DEV_ADMIN_HANDLE,
+  isDevAdminHandle,
   requestEmailCode,
+  signInAsDevAdmin,
   signInWithGoogle,
   verifyEmailCode,
 } from './auth/betaAuthService';
@@ -26,9 +29,17 @@ export default function LoginPage({ onAuthenticated, onBackToLanding, onOpenInvi
   const [demoCodeVisible, setDemoCodeVisible] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  /** Dev shortcut: `admin` in the email field signs in without a code. */
+  const tryDevAdmin = (): boolean => {
+    if (!isDevAdminHandle(email)) return false;
+    onAuthenticated(signInAsDevAdmin());
+    return true;
+  };
+
   const handleGoogle = () => {
     setError(null);
     try {
+      if (tryDevAdmin()) return;
       onAuthenticated(signInWithGoogle(email));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not sign in with Google.');
@@ -38,6 +49,7 @@ export default function LoginPage({ onAuthenticated, onBackToLanding, onOpenInvi
   const handleSendCode = () => {
     setError(null);
     try {
+      if (tryDevAdmin()) return;
       requestEmailCode(email);
       setDemoCodeVisible(true);
     } catch (err) {
@@ -49,6 +61,7 @@ export default function LoginPage({ onAuthenticated, onBackToLanding, onOpenInvi
     e.preventDefault();
     setError(null);
     try {
+      if (tryDevAdmin()) return;
       onAuthenticated(verifyEmailCode(email, otp));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not verify code.');
@@ -95,6 +108,12 @@ export default function LoginPage({ onAuthenticated, onBackToLanding, onOpenInvi
           <button type="button" className="btn-continue" onClick={handleSendCode}>
             Email me a code
           </button>
+          {import.meta.env.DEV && (
+            <div className="beta-banner" style={{ marginTop: 12 }}>
+              Dev only — type <strong>{DEV_ADMIN_HANDLE}</strong> as the email to sign in as
+              super admin.
+            </div>
+          )}
           {demoCodeVisible && (
             <div className="beta-banner" style={{ marginTop: 12 }}>
               Demo only — code is <strong>{DEMO_EMAIL_CODE}</strong> (email delivery comes later).
