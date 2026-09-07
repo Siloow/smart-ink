@@ -3012,3 +3012,15 @@ body {
   /* Overlay only; the canvas underneath must keep receiving pointer input. */
   pointer-events: none;
 }
+
+/* Shown while the lazily loaded workspace chunk (editor + three.js) downloads. */
+.app-loading {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
+}
