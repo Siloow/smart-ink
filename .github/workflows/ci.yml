@@ -35,13 +35,18 @@ jobs:
         run: npm run build
 
       # The production bundle once reached 207 MB because public/ pulled the
-      # whole Blender working tree into dist/. Print the size on every run so a
-      # regression is visible in the log; a hard limit lands once the build is
-      # trimmed (docs/beta-improvement-plan.md, Phase 1).
-      - name: Report dist size
+      # whole Blender working tree into dist/. It is ~16 MB now (four body
+      # meshes plus the app); fail if it creeps past 25 MB.
+      - name: Report and limit dist size
         run: |
           echo "## Build output" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           du -sh dist | tee -a "$GITHUB_STEP_SUMMARY"
           du -sh dist/* | sort -h | tail -n 8 | tee -a "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
+          size_kb=$(du -sk dist | cut -f1)
+          limit_kb=$((25 * 1024))
+          if [ "$size_kb" -gt "$limit_kb" ]; then
+            echo "::error::dist/ is ${size_kb} KB, over the ${limit_kb} KB limit. Something large landed in public/."
+            exit 1
+          fi
