@@ -8,9 +8,17 @@ What lives where:
 
 | Piece | Where |
 | --- | --- |
-| Tables, row-level security, RPCs | `supabase/migrations/20260907120000_beta_gate.sql` |
+| Gate tables, row-level security, RPCs | `supabase/migrations/20260907120000_beta_gate.sql` |
+| Scenes, render history, storage buckets and policies | `supabase/migrations/20260907150000_scenes.sql` |
 | Invite email (Resend) | `supabase/functions/send-invite/index.ts` |
-| Client | `src/auth/supabaseBackend.ts` behind `src/auth/betaAuthService.ts` |
+| Gate client | `src/auth/supabaseBackend.ts` behind `src/auth/betaAuthService.ts` |
+| Scene and render storage client | `src/storage/supabaseSceneStore.ts`, `src/storage/supabaseRenderHistory.ts` |
+
+Scenes, decals, thumbnails and renders are per account once Supabase is
+configured. The migration creates two private buckets, `scene-assets` and
+`renders`, whose policies key on the first folder of each object being the
+owner's auth uid. A browser that already has local scenes copies them up
+once on first sign-in; the local copies stay.
 
 Identity and access are separate on purpose. Supabase Auth will sign in any
 Google account or any address that asks for a code; the app then calls
@@ -117,3 +125,7 @@ call fails the console says so and the link is still copied.
 - Sign in with Google using an uninvited account: you should be bounced back
   to the login page with "No beta access for this email".
 - Revoke the throwaway account and confirm it can no longer sign in.
+- Sign in on two browsers, create a scene with a tattoo on one, and confirm
+  it appears with its thumbnail on the other.
+- Export an image, open Share from the editor toolbar, create a share link,
+  and open it in a private window: the render must load without signing in.
