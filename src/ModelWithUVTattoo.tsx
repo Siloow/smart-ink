@@ -8,7 +8,7 @@ import {
   useImperativeHandle,
 } from 'react';
 import { useLoader, useThree, useFrame } from '@react-three/fiber';
-import { GLTFLoader, OBJLoader } from 'three-stdlib';
+import { GLTFLoader, OBJLoader, type GLTF } from 'three-stdlib';
 import * as THREE from 'three';
 import { TextureLoader } from 'three';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
@@ -19,6 +19,17 @@ import type { LightDefinition } from './config/lightingPresets';
 const SAFE_ZONE = { uMin: 0.05, uMax: 0.95, vMin: 0.08, vMax: 0.92 };
 const MAX_SCENE_LIGHTS = 4;
 const HUMAN_ELBOW_BONE = 'r_forearm';
+
+/**
+ * Browser preview meshes, served from public/models/ (symlinks into
+ * smartink-live/). Only the selected body is fetched: together the three come
+ * to ~13 MB, and the full figure alone is 2.5 MB.
+ */
+const MODEL_SOURCES: Record<PreviewModel, { url: string; kind: 'gltf' | 'obj' }> = {
+  FinalBaseMesh: { url: '/models/FinalBaseMesh.obj', kind: 'obj' },
+  Monk: { url: '/models/monk.glb', kind: 'gltf' },
+  Human: { url: '/models/human_arm_rig.glb', kind: 'gltf' },
+};
 
 const vertexShader = `
   #include <common>
@@ -253,9 +264,14 @@ const ModelWithUVTattoo = forwardRef<ModelWithUVTattooHandle, ModelWithUVTattooP
     }, [hasPlaced]);
 
     const logoTexture = useLoader(TextureLoader, '/logo.png');
-    const monkGltf = useLoader(GLTFLoader, '/monk.glb');
-    const humanGltf = useLoader(GLTFLoader, '/human_arm_rig.glb');
-    const baseObj = useLoader(OBJLoader, '/FinalBaseMesh.obj');
+    const source = MODEL_SOURCES[model];
+    // App keys this component by model, so the loader class never changes for
+    // the life of one instance and the hook call stays stable. The cast is
+    // only there because useLoader cannot infer a union of loader classes.
+    const loadedModel = useLoader(
+      (source.kind === 'gltf' ? GLTFLoader : OBJLoader) as typeof OBJLoader,
+      source.url
+    ) as unknown as GLTF | THREE.Group;
 
     const enforceSafeZone = model !== 'Human';
     const safeZoneVisible = showSafeZone && enforceSafeZone;
@@ -389,14 +405,8 @@ const ModelWithUVTattoo = forwardRef<ModelWithUVTattooHandle, ModelWithUVTattooP
     });
 
     useEffect(() => {
-      let modelGroup: THREE.Object3D;
-      if (model === 'Monk') {
-        modelGroup = monkGltf.scene;
-      } else if (model === 'Human') {
-        modelGroup = humanGltf.scene;
-      } else {
-        modelGroup = baseObj;
-      }
+      const modelGroup: THREE.Object3D =
+        source.kind === 'gltf' ? (loadedModel as GLTF).scene : (loadedModel as THREE.Group);
 
       const group =
         model === 'Human' ? cloneSkinned(modelGroup) : modelGroup.clone(true);
@@ -447,7 +457,7 @@ const ModelWithUVTattoo = forwardRef<ModelWithUVTattooHandle, ModelWithUVTattooP
         pickTargetRef.current = null;
         setCloneGroup(null);
       }
-    }, [model, monkGltf, humanGltf, baseObj, shaderMaterial]);
+    }, [model, source.kind, loadedModel, shaderMaterial]);
 
     useEffect(() => {
       setDecalVisible(hasPlaced);

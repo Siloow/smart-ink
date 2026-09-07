@@ -167,7 +167,11 @@ def _resolve_asset(contract_dir: str, filename: str) -> Optional[str]:
     if os.path.exists(candidate):
         return candidate
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    for base in (os.path.join(script_dir, ".."), os.path.join(script_dir, "..", "..", "public")):
+    for base in (
+        os.path.join(script_dir, ".."),
+        os.path.join(script_dir, "..", "..", "public", "models"),
+        os.path.join(script_dir, "..", "models"),
+    ):
         candidate = os.path.join(base, filename)
         if os.path.exists(candidate):
             return candidate

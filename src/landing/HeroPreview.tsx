@@ -15,7 +15,7 @@ import { SplitFigure } from './PipelineFigures';
  * extra JS.
  */
 
-const MESH_URL = '/forearm.obj';
+const MESH_URL = '/models/forearm.obj';
 /**
  * The mesh is normalised by the width of the forearm rather than its length: it
  * is a ~5:1 shaft, so length-based framing leaves a thin sliver in the middle of
