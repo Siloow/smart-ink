@@ -6,7 +6,8 @@ export default defineConfig({
   plugins: [react()],
   server: {
     host: '0.0.0.0', // Allow connections from any IP
-    port: 5173, // Default Vite port
+    // Honor PORT so a second dev server (e.g. a tool-driven preview) can coexist.
+    port: Number(process.env.PORT) || 5173,
     proxy: {
       '/health': 'http://127.0.0.1:8000',
       '/sync-live': 'http://127.0.0.1:8000',
