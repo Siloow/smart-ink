@@ -8,8 +8,8 @@ This is a read of the beta as it stands on the branch, followed by a phased plan
 
 | Phase | Status | Notes |
 | --- | --- | --- |
-| 0 — Stabilize | Done 2026-09-07 | Typecheck and lint pass; CI added; error boundaries; dead controls and placeholder content removed; Pose hidden; backups and stray files untracked. |
-| 1 — Lean build | Not started | |
+| 0 — Stabilize | Done 2026-09-07 | Typecheck and lint pass; CI added; error boundaries; dead controls and placeholder content removed; Pose hidden; backups and stray files untracked. One regression from this phase (a Suspense boundary outside the R3F Canvas lost the WebGL context, blanking the viewport) was found the same day and fixed by moving the boundary inside the Canvas. |
+| 1 — Lean build | Done 2026-09-07 | `dist/` 207 MB → 17 MB; the editor fetches only the selected body; workspace lazy-loaded behind the gate; three.js in its own chunk; CI fails above 25 MB; logo texture 1.4 MB → 107 KB; `docs/deploy.md`. Not done: `FinalBaseMesh.obj` → `.glb` (small win once the host gzips) and the host itself, which is your call. |
 | 2 — A real gate | Not started | Interim: set `VITE_WAITLIST_ENDPOINT` so leads stop being dropped. |
 | 3 — Scenes follow the user | Not started | |
 | 4 — Render service | Not started | |
