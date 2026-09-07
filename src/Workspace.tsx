@@ -29,6 +29,7 @@ import { migrateScene } from './sceneStorage'
 import { addRenderHistory } from './renderHistoryStorage'
 import RenderHistoryModal from './RenderHistoryModal'
 import { captureThumbnail } from './storage/dataUrl'
+import { DEFAULT_BODY_SHAPE, normalizeShape, type BodyShape } from './render/bodyShape'
 import * as THREE from 'three'
 import type { BetaSession } from './auth/types'
 
@@ -142,6 +143,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
   const [skinToneId, setSkinToneId] = useState('tone_03')
   const [poseId, setPoseId] = useState('neutral')
   const [armBendDeg, setArmBendDeg] = useState(0)
+  const [bodyShape, setBodyShape] = useState<BodyShape>(() => ({ ...DEFAULT_BODY_SHAPE }))
   const [lookId, setLookId] = useState('studio_softbox')
   const [qualityTier, setQualityTier] = useState<'preview' | 'final'>('preview')
   const uvPlacementRef = useRef<ModelWithUVTattooHandle>(null)
@@ -225,7 +227,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
     const outHeight = Math.max(1, Math.round(baseWidth / snap.aspect))
 
     const contract = buildRenderContract(
-      { bodyMeshId, skinToneId, poseId, lookId, qualityTier },
+      { bodyMeshId, skinToneId, poseId, lookId, qualityTier, bodyShape },
       {
         position: snap.position,
         target: snap.target,
@@ -241,7 +243,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
       },
     )
     return { contract, inkBlob }
-  }, [uploadedImage, bodyMeshId, skinToneId, poseId, lookId, qualityTier, cameraState, threeRenderer, lightingPreset, lights])
+  }, [uploadedImage, bodyMeshId, skinToneId, poseId, lookId, qualityTier, bodyShape, cameraState, threeRenderer, lightingPreset, lights])
 
   const handleLookChange = useCallback((id: string) => {
     setLookId(id)
@@ -263,6 +265,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
     setPoseId(migrated.poseId!)
     setLookId(migrated.lookId!)
     setQualityTier(migrated.qualityTier!)
+    setBodyShape(normalizeShape(migrated.bodyShape))
     setModel(previewModelForBody(migrated.bodyMeshId!))
     const look = findById(REGISTRY.looks, migrated.lookId!)
     if (look) {
@@ -311,6 +314,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
         poseId,
         lookId,
         qualityTier,
+        bodyShape,
         // thumbnail will be updated in a separate effect
       }
       void updateScene(updated).then(() => setCurrentScene(updated))
@@ -319,7 +323,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
     // currentScene is deliberately not a dependency: this effect writes it, so
     // including it would re-run on every save and loop forever.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [uploadedImage, model, decalVisible, decalRotation, decalScale, decalColor, decalOpacity, decalPosition, decalNormal, background, lightingPreset, cameraState, bodyMeshId, skinToneId, poseId, lookId, qualityTier])
+  }, [uploadedImage, model, decalVisible, decalRotation, decalScale, decalColor, decalOpacity, decalPosition, decalNormal, background, lightingPreset, cameraState, bodyMeshId, skinToneId, poseId, lookId, qualityTier, bodyShape])
 
   // Capture a dashboard thumbnail once the user pauses. Encoding the full
   // canvas on every change produced multi-megabyte data URLs and a save per
@@ -344,7 +348,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
       void updateScene(updated).then(() => setCurrentScene(updated))
     }, 1500)
     return () => clearTimeout(timeout)
-  }, [currentScene, uploadedImage, model, decalRotation, decalScale, decalColor, decalOpacity, decalPosition, decalNormal, background, lightingPreset, cameraState])
+  }, [currentScene, uploadedImage, model, decalRotation, decalScale, decalColor, decalOpacity, decalPosition, decalNormal, background, lightingPreset, cameraState, bodyShape])
 
   // Reset decal transform
   const handleResetDecal = () => {
@@ -729,6 +733,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
             intensityScale={LIGHTING_PRESETS[lightingPreset].threeIntensityScale}
             performanceMode={performanceMode}
             armBendDeg={armBendDeg}
+            bodyShape={bodyShape}
           />
         </Suspense>
         <OrbitControlsWithCmdLock
@@ -766,6 +771,8 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
           onLookChange={handleLookChange}
           armBendDeg={armBendDeg}
           onArmBendChange={setArmBendDeg}
+          bodyShape={bodyShape}
+          onBodyShapeChange={setBodyShape}
           setUploadedImage={setUploadedImage}
           uploadedImage={uploadedImage}
           decalVisible={decalVisible}

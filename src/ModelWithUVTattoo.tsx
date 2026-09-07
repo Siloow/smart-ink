@@ -15,6 +15,30 @@ import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { TATTOO_LAYER_GLSL } from './render/tattooLayer';
 import { findById, REGISTRY, type PreviewModel } from './render/registry';
 import type { LightDefinition } from './config/lightingPresets';
+import {
+  applyBodyShape,
+  DEFAULT_BODY_SHAPE,
+  prepareDeformable,
+  shapeBounds,
+  type BodyShape,
+  type Deformable,
+  type ShapeBounds,
+} from './render/bodyShape';
+
+/** Registry body id for a preview model, so shape rules know what they are reshaping. */
+function bodyIdForModel(model: PreviewModel): string {
+  return REGISTRY.bodyMeshes.find((b) => b.previewModel === model)?.id ?? 'body_full';
+}
+
+/** Moves a group so its (possibly reshaped) bounds are centred on the origin. */
+function recenterGroup(group: THREE.Object3D): void {
+  group.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(group);
+  if (box.isEmpty()) return;
+  const center = new THREE.Vector3();
+  box.getCenter(center);
+  group.position.sub(center);
+}
 
 const SAFE_ZONE = { uMin: 0.05, uMax: 0.95, vMin: 0.08, vMax: 0.92 };
 const MAX_SCENE_LIGHTS = 4;
@@ -231,6 +255,8 @@ interface ModelWithUVTattooProps {
   performanceMode?: boolean;
   /** Degrees of right-elbow flexion for the skinned Human preview. */
   armBendDeg?: number;
+  /** Sims-style shape sliders; identity when omitted. */
+  bodyShape?: BodyShape;
 }
 
 const ModelWithUVTattoo = forwardRef<ModelWithUVTattooHandle, ModelWithUVTattooProps>(
@@ -247,6 +273,7 @@ const ModelWithUVTattoo = forwardRef<ModelWithUVTattooHandle, ModelWithUVTattooP
       intensityScale = 1,
       performanceMode = false,
       armBendDeg = 0,
+      bodyShape = DEFAULT_BODY_SHAPE,
     },
     ref
   ) {
@@ -254,6 +281,7 @@ const ModelWithUVTattoo = forwardRef<ModelWithUVTattooHandle, ModelWithUVTattooP
     const [cloneGroup, setCloneGroup] = useState<THREE.Object3D | null>(null);
     const pickTargetRef = useRef<THREE.Object3D | null>(null);
     const elbowBoneRef = useRef<THREE.Bone | null>(null);
+    const deformablesRef = useRef<{ items: Deformable[]; bounds: ShapeBounds } | null>(null);
     const tattooCenter = useRef(new THREE.Vector2(0.5, 0.5));
     const [hasPlaced, setHasPlaced] = useState(false);
     const hasPlacedRef = useRef(false);
@@ -412,8 +440,10 @@ const ModelWithUVTattoo = forwardRef<ModelWithUVTattooHandle, ModelWithUVTattooP
         model === 'Human' ? cloneSkinned(modelGroup) : modelGroup.clone(true);
 
       elbowBoneRef.current = null;
+      deformablesRef.current = null;
 
       if (model === 'Human') {
+        const deformables: Deformable[] = [];
         group.traverse((child) => {
           const m = child as THREE.Mesh;
           if (!m.isMesh) return;
@@ -421,15 +451,19 @@ const ModelWithUVTattoo = forwardRef<ModelWithUVTattooHandle, ModelWithUVTattooP
             m.visible = false;
             return;
           }
+          // The loaded GLTF geometry is shared with the loader cache; reshape a copy.
+          m.geometry = m.geometry.clone();
           if (!m.geometry.attributes.uv) ensureUVs(m.geometry);
           m.material = shaderMaterial;
           const skinned = m as THREE.SkinnedMesh;
           if (skinned.isSkinnedMesh) {
             skinned.bind(skinned.skeleton, skinned.bindMatrix);
           }
+          deformables.push(prepareDeformable(m.geometry));
         });
         centerAndScaleToHeight(group, HUMAN_TARGET_HEIGHT);
         elbowBoneRef.current = findElbowBone(group);
+        deformablesRef.current = { items: deformables, bounds: shapeBounds(deformables) };
         pickTargetRef.current = group;
         setCloneGroup(group);
         return;
@@ -451,6 +485,8 @@ const ModelWithUVTattoo = forwardRef<ModelWithUVTattooHandle, ModelWithUVTattooP
         ensureUVs(geo);
         mesh.geometry = geo;
         mesh.material = shaderMaterial;
+        const deformable = prepareDeformable(geo);
+        deformablesRef.current = { items: [deformable], bounds: shapeBounds([deformable]) };
         pickTargetRef.current = group;
         setCloneGroup(group);
       } else {
@@ -458,6 +494,16 @@ const ModelWithUVTattoo = forwardRef<ModelWithUVTattooHandle, ModelWithUVTattooP
         setCloneGroup(null);
       }
     }, [model, source.kind, loadedModel, shaderMaterial]);
+
+    // Reshape whenever the sliders change or the group is rebuilt. Positions
+    // are always recomputed from the undeformed snapshot, so sliders never
+    // compound, and the UV-placed tattoo rides along with the skin.
+    useEffect(() => {
+      const prepared = deformablesRef.current;
+      if (!cloneGroup || !prepared) return;
+      applyBodyShape(prepared.items, prepared.bounds, bodyShape, bodyIdForModel(model));
+      recenterGroup(cloneGroup);
+    }, [cloneGroup, bodyShape, model]);
 
     useEffect(() => {
       setDecalVisible(hasPlaced);

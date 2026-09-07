@@ -1,3 +1,4 @@
+import { normalizeShape } from '../render/bodyShape';
 import type { SceneData } from '../types';
 
 export interface SceneStore {
@@ -23,5 +24,6 @@ export function migrateScene(s: SceneData): SceneData {
     poseId: s.poseId ?? 'neutral',
     lookId: s.lookId ?? 'studio_softbox',
     qualityTier: s.qualityTier ?? 'preview',
+    bodyShape: normalizeShape(s.bodyShape),
   };
 }

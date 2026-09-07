@@ -23,6 +23,8 @@ export interface SceneData {
   poseId?: string;
   lookId?: string;
   qualityTier?: 'preview' | 'final';
+  /** Sims-style shape sliders; see src/render/bodyShape.ts. */
+  bodyShape?: Record<string, number>;
   createdAt: Date;
   updatedAt: Date;
   createdBy: string;

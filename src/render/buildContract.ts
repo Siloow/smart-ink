@@ -1,5 +1,6 @@
 import { RENDER_SCHEMA_VERSION, type RenderContract, type ContractLight } from './contract';
 import { REGISTRY, findById } from './registry';
+import { BODY_SHAPE_KEYS, effectiveShape, isDefaultShape, type BodyShape } from './bodyShape';
 
 export interface BuilderState {
   bodyMeshId: string;
@@ -7,6 +8,7 @@ export interface BuilderState {
   poseId: string;
   lookId: string;
   qualityTier: 'preview' | 'final';
+  bodyShape?: BodyShape;
 }
 export interface ShotState {
   position: [number, number, number];
@@ -24,12 +26,14 @@ export function buildRenderContract(
   dims: { width: number; height: number },
   lighting?: { presetName: string; intensityScale?: number; lights: ContractLight[] }
 ): RenderContract {
+  const shape = builder.bodyShape ? effectiveShape(builder.bodyShape, builder.bodyMeshId) : null;
   return {
     schemaVersion: RENDER_SCHEMA_VERSION,
     bodyMeshId: builder.bodyMeshId,
     skinToneId: builder.skinToneId,
     poseId: builder.poseId,
     lookId: builder.lookId,
+    ...(shape && !isDefaultShape(shape) ? { bodyShape: { ...shape } } : {}),
     inkTextureUrl,
     camera: { ...shot },
     output: { qualityTier: builder.qualityTier, width: dims.width, height: dims.height },
@@ -47,5 +51,13 @@ export function validateContract(c: RenderContract): string[] {
   if (!findById(REGISTRY.poses, c.poseId)) errs.push(`unknown poseId ${c.poseId}`);
   if (!findById(REGISTRY.looks, c.lookId)) errs.push(`unknown lookId ${c.lookId}`);
   if (!c.inkTextureUrl) errs.push('missing inkTextureUrl');
+  if (c.bodyShape) {
+    for (const [key, value] of Object.entries(c.bodyShape)) {
+      if (!(BODY_SHAPE_KEYS as readonly string[]).includes(key)) errs.push(`unknown bodyShape key ${key}`);
+      else if (typeof value !== 'number' || !Number.isFinite(value) || value < -1 || value > 1) {
+        errs.push(`bodyShape.${key} must be a number in [-1, 1]`);
+      }
+    }
+  }
   return errs;
 }

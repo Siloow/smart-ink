@@ -379,6 +379,198 @@ def _apply_skin_procedural(body: bpy.types.Object, skin_tone_id: str) -> None:
         body.data.materials.append(mat)
 
 
+# ---------------------------------------------------------------------------
+# Body shape (mirrors src/render/bodyShape.ts; keep BODY_SHAPE_TUNING in sync)
+# ---------------------------------------------------------------------------
+
+BODY_SHAPE_KEYS = (
+    "height", "build", "shoulders", "chest", "waist", "belly",
+    "hips", "arms", "legs", "legLength", "head",
+)
+FIGURE_ONLY_KEYS = {"shoulders", "chest", "waist", "belly", "hips", "arms", "legs", "legLength", "head"}
+BODY_SHAPE_TUNING: Dict[str, Any] = {
+    "height": 0.12,
+    "build": 0.03,
+    "shoulders": {"scale": 0.14, "c": 0.82, "hw": 0.08},
+    "chest": {"amp": 0.03, "c": 0.74, "hw": 0.09},
+    "waist": {"amp": 0.035, "c": 0.60, "hw": 0.07},
+    "belly": {"amp": 0.055, "c": 0.62, "hw": 0.10},
+    "hips": {"scale": 0.10, "c": 0.50, "hw": 0.08},
+    "arms": {"amp": 0.025, "c": 0.66, "hw": 0.22},
+    "legs": {"amp": 0.03, "c": 0.26, "hw": 0.24},
+    "legLength": {"stretch": 0.12, "hip": 0.5},
+    "head": {"scale": 0.18, "c": 0.93, "hw": 0.10},
+    "armMask": {"from": 0.42, "to": 0.62},
+}
+
+
+def _band(h: float, c: float, hw: float) -> float:
+    """Raised-cosine window: 1 at the centre, 0 beyond +/-hw."""
+    t = min(1.0, abs(h - c) / hw)
+    return 0.5 * (1.0 + math.cos(math.pi * t))
+
+
+def _smoothstep(e0: float, e1: float, x: float) -> float:
+    t = max(0.0, min(1.0, (x - e0) / (e1 - e0)))
+    return t * t * (3.0 - 2.0 * t)
+
+
+def _effective_shape(shape: Optional[Dict[str, Any]], body_mesh_id: str) -> Dict[str, float]:
+    figure = body_mesh_id != "forearm"
+    out = {k: 0.0 for k in BODY_SHAPE_KEYS}
+    for key, value in (shape or {}).items():
+        if key not in out or (not figure and key in FIGURE_ONLY_KEYS):
+            continue
+        try:
+            out[key] = max(-1.0, min(1.0, float(value)))
+        except (TypeError, ValueError):
+            pass
+    return out
+
+
+def _dominant_axis(v: Vector) -> Vector:
+    """Snap a direction to the nearest signed coordinate axis."""
+    comps = [abs(v.x), abs(v.y), abs(v.z)]
+    i = comps.index(max(comps))
+    out = Vector((0.0, 0.0, 0.0))
+    out[i] = 1.0 if v[i] >= 0 else -1.0
+    return out
+
+
+def _body_axes(mesh: bpy.types.Mesh, body: bpy.types.Object) -> Tuple[Vector, Vector]:
+    """Local up and front directions of a body mesh.
+
+    Importers disagree: the OBJ importer keeps mesh data Y-up and rotates the
+    object; the glTF importer, for rigged meshes, keeps Y-up data with an
+    identity transform. A full figure is always tallest along its up axis, so
+    that wins; the object transform only decides ambiguous cases. Front is
+    +Z for Y-up assets (glTF/three.js convention) and -Y for Blender-native
+    Z-up ones.
+    """
+    lo = [float("inf")] * 3
+    hi = [float("-inf")] * 3
+    for v in mesh.vertices:
+        for i in range(3):
+            c = v.co[i]
+            if c < lo[i]:
+                lo[i] = c
+            if c > hi[i]:
+                hi[i] = c
+    ext = [hi[i] - lo[i] for i in range(3)]
+    order = sorted(range(3), key=lambda i: -ext[i])
+    if ext[order[1]] <= 0 or ext[order[0]] > 1.15 * ext[order[1]]:
+        up = Vector((0.0, 0.0, 0.0))
+        up[order[0]] = 1.0
+    else:
+        inv = body.matrix_world.inverted().to_3x3()
+        up = _dominant_axis(inv @ Vector((0.0, 0.0, 1.0)))
+    if up.z > 0.5:
+        front = Vector((0.0, -1.0, 0.0))
+    elif up.y > 0.5:
+        front = Vector((0.0, 0.0, 1.0))
+    else:  # X-up would be odd; keep a valid orthogonal frame
+        front = Vector((0.0, 0.0, 1.0))
+    return up, front
+
+
+def apply_body_shape(body: bpy.types.Object, shape: Optional[Dict[str, Any]], body_mesh_id: str) -> None:
+    """Vertex deformation matching the browser preview (src/render/bodyShape.ts).
+
+    Importers disagree about axes: the OBJ importer keeps mesh data Y-up and
+    rotates the object, the glTF importer bakes Z-up into the vertices. The
+    up and front directions are therefore read back from the object's world
+    matrix (world +Z is up, the model faces world -Y) and the maths runs in
+    that (side, up, front) basis. Run after UVs are generated and before the
+    body is centred.
+    """
+    s = _effective_shape(shape, body_mesh_id)
+    if all(abs(v) < 1e-4 for v in s.values()):
+        return
+    mesh = body.data
+    if not isinstance(mesh, bpy.types.Mesh) or len(mesh.vertices) == 0:
+        return
+
+    up, front = _body_axes(mesh, body)
+    side = front.cross(up)
+
+    T = BODY_SHAPE_TUNING
+    coords = [v.co.copy() for v in mesh.vertices]
+    try:
+        normals = [n.vector.copy() for n in mesh.vertex_normals]
+    except AttributeError:  # Blender < 3.1
+        normals = [v.normal.copy() for v in mesh.vertices]
+
+    # Local (side, up, front) coordinates of every vertex.
+    xs = [c.dot(side) for c in coords]
+    ys = [c.dot(up) for c in coords]
+    zs = [c.dot(front) for c in coords]
+    min_x, max_x = min(xs), max(xs)
+    min_y, max_y = min(ys), max(ys)
+    min_z, max_z = min(zs), max(zs)
+    height = max_y - min_y
+    if height <= 0:
+        return
+    half_w = max(1e-6, (max_x - min_x) / 2.0)
+    cx = (min_x + max_x) / 2.0
+    cz = (min_z + max_z) / 2.0
+    hip_y = min_y + T["legLength"]["hip"] * height
+    head_y = min_y + T["head"]["c"] * height
+    amp = {
+        "build": T["build"] * height,
+        "chest": T["chest"]["amp"] * height,
+        "waist": T["waist"]["amp"] * height,
+        "belly": T["belly"]["amp"] * height,
+        "arms": T["arms"]["amp"] * height,
+        "legs": T["legs"]["amp"] * height,
+    }
+    height_k = 1.0 + T["height"] * s["height"]
+    leg_k = 1.0 + T["legLength"]["stretch"] * s["legLength"]
+
+    for i, n in enumerate(normals):
+        x0, y0, z0 = xs[i], ys[i], zs[i]
+        nx, ny, nz = n.dot(side), n.dot(up), n.dot(front)
+        h = (y0 - min_y) / height
+        u = abs(x0 - cx) / half_w
+        front_w = max(0.0, nz)
+        arm_mask = _smoothstep(T["armMask"]["from"], T["armMask"]["to"], u)
+        torso_mask = 1.0 - arm_mask
+
+        off = (
+            s["build"] * amp["build"]
+            + s["chest"] * amp["chest"] * _band(h, T["chest"]["c"], T["chest"]["hw"]) * torso_mask
+            + s["waist"] * amp["waist"] * _band(h, T["waist"]["c"], T["waist"]["hw"]) * torso_mask
+            + s["belly"] * amp["belly"] * _band(h, T["belly"]["c"], T["belly"]["hw"]) * torso_mask * front_w
+            + s["arms"] * amp["arms"] * _band(h, T["arms"]["c"], T["arms"]["hw"]) * arm_mask
+            + s["legs"] * amp["legs"] * _band(h, T["legs"]["c"], T["legs"]["hw"]) * torso_mask
+        )
+        x = x0 + nx * off
+        y = y0 + ny * off
+        z = z0 + nz * off
+
+        lateral = (1.0 + T["shoulders"]["scale"] * s["shoulders"] * _band(h, T["shoulders"]["c"], T["shoulders"]["hw"])) * (
+            1.0 + T["hips"]["scale"] * s["hips"] * _band(h, T["hips"]["c"], T["hips"]["hw"])
+        )
+        x = cx + (x - cx) * lateral
+
+        if s["head"]:
+            k = 1.0 + T["head"]["scale"] * s["head"] * _band(h, T["head"]["c"], T["head"]["hw"])
+            x = cx + (x - cx) * k
+            y = head_y + (y - head_y) * k
+            z = cz + (z - cz) * k
+
+        if y < hip_y:
+            y = hip_y - (hip_y - y) * leg_k
+
+        x = cx + (x - cx) * height_k
+        y = min_y + (y - min_y) * height_k
+        z = cz + (z - cz) * height_k
+        mesh.vertices[i].co = side * x + up * y + front * z
+
+    mesh.update()
+    active = ", ".join(f"{k}={v:+.2f}" for k, v in s.items() if abs(v) >= 1e-4)
+    print(f"[smartink] Applied body shape ({active}); up={tuple(up)} front={tuple(front)}")
+
+
 def apply_pose(pose_id: str, body: bpy.types.Object) -> None:
     # Pose library not bundled locally; server resolves serverPose assets.
     _ = pose_id, body
@@ -628,6 +820,8 @@ def build_scene(contract_path: str) -> str:
     ensure_box_projection_uvs(body)
     apply_skin(body, contract.get("skinToneId", "tone_03"), contract_dir)
     apply_pose(contract.get("poseId", "neutral"), body)
+    apply_body_shape(body, contract.get("bodyShape"), contract["bodyMeshId"])
+    center_body_at_origin(body)  # the reshaped bounds differ from the loaded ones
     lighting = contract.get("lighting") or {}
     apply_world(
         contract.get("lookId", "studio_softbox"),

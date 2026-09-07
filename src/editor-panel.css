@@ -373,3 +373,38 @@
 .cb-swatch-wrap[aria-pressed='true'] .cb-swatch-label {
   color: var(--text-primary);
 }
+
+/* ---------- Body shape sliders ---------- */
+.shape-presets {
+  margin-bottom: 4px;
+}
+
+.shape-group {
+  margin-top: 10px;
+}
+
+.shape-group-label {
+  margin: 0 0 4px;
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.shape-field {
+  margin-bottom: 6px;
+}
+
+.shape-value {
+  font-size: 0.76rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  min-width: 2.5em;
+  text-align: right;
+}
+
+.ep-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

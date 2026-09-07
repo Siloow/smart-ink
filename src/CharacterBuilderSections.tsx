@@ -1,5 +1,16 @@
 import type { ReactNode } from 'react';
 import { REGISTRY } from './render/registry';
+import {
+  BODY_SHAPE_PRESETS,
+  DEFAULT_BODY_SHAPE,
+  bodyShapeParamsFor,
+  formatShapeValue,
+  isDefaultShape,
+  isPresetActive,
+  shapeFromPreset,
+  type BodyShape,
+  type BodyShapeGroup,
+} from './render/bodyShape';
 
 export interface CharacterBuilderSectionsProps {
   bodyMeshId: string;
@@ -13,6 +24,8 @@ export interface CharacterBuilderSectionsProps {
   onLookChange: (id: string) => void;
   armBendDeg?: number;
   onArmBendChange?: (deg: number) => void;
+  bodyShape: BodyShape;
+  onBodyShapeChange: (shape: BodyShape) => void;
 }
 
 function Section({ label, children }: { label: string; children: ReactNode }) {
@@ -37,8 +50,22 @@ export default function CharacterBuilderSections({
   onLookChange,
   armBendDeg = 0,
   onArmBendChange,
+  bodyShape,
+  onBodyShapeChange,
 }: CharacterBuilderSectionsProps) {
   const showArmRig = bodyMeshId === 'human';
+  const shapeParams = bodyShapeParamsFor(bodyMeshId);
+  const shapeGroups = shapeParams.reduce<Array<{ group: BodyShapeGroup; params: typeof shapeParams }>>(
+    (acc, param) => {
+      const existing = acc.find((g) => g.group === param.group);
+      if (existing) existing.params.push(param);
+      else acc.push({ group: param.group, params: [param] });
+      return acc;
+    },
+    []
+  );
+  const setShapeValue = (key: keyof BodyShape, value: number) =>
+    onBodyShapeChange({ ...bodyShape, [key]: value });
 
   return (
     <>
@@ -87,6 +114,60 @@ export default function CharacterBuilderSections({
             );
           })}
         </div>
+      </Section>
+
+      <Section label="Body shape">
+        <div className="ep-pill-row shape-presets">
+          {BODY_SHAPE_PRESETS.map((preset) => (
+            <button
+              key={preset.id}
+              type="button"
+              className="ep-pill"
+              aria-pressed={isPresetActive(bodyShape, preset)}
+              onClick={() => onBodyShapeChange(shapeFromPreset(preset))}
+            >
+              {preset.label}
+            </button>
+          ))}
+        </div>
+        {shapeGroups.map(({ group, params }) => (
+          <div className="shape-group" key={group}>
+            <p className="shape-group-label">{group}</p>
+            {params.map((param) => (
+              <div className="ep-field shape-field" key={param.key}>
+                <div className="ep-field-row">
+                  <span className="ep-field-label">{param.label}</span>
+                  <span className="shape-value">{formatShapeValue(bodyShape[param.key])}</span>
+                </div>
+                <input
+                  type="range"
+                  className="ep-range"
+                  min={-1}
+                  max={1}
+                  step={0.02}
+                  value={bodyShape[param.key]}
+                  onChange={(e) => setShapeValue(param.key, Number(e.target.value))}
+                  onDoubleClick={() => setShapeValue(param.key, 0)}
+                  aria-label={param.label}
+                  title="Double-click to reset"
+                />
+              </div>
+            ))}
+          </div>
+        ))}
+        <button
+          type="button"
+          className="ep-btn ep-btn--block ep-btn--ghost"
+          disabled={isDefaultShape(bodyShape)}
+          onClick={() => onBodyShapeChange({ ...DEFAULT_BODY_SHAPE })}
+        >
+          Reset shape
+        </button>
+        {!showArmRig && bodyMeshId === 'forearm' && (
+          <p className="ep-hint" style={{ marginTop: 6 }}>
+            Proportion controls apply to full figures; this body only takes Height and Build.
+          </p>
+        )}
       </Section>
 
       {/*

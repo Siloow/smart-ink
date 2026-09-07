@@ -4,6 +4,7 @@ import CharacterBuilderSections from './CharacterBuilderSections';
 import LightingControls from './LightingControls';
 import type { LightDefinition, LightingPresetKey } from './config/lightingPresets';
 import { resolveRig } from './config/lightingPresets';
+import type { BodyShape } from './render/bodyShape';
 
 interface TopMenuBarProps {
   bodyMeshId: string;
@@ -16,6 +17,8 @@ interface TopMenuBarProps {
   onLookChange: (id: string) => void;
   armBendDeg?: number;
   onArmBendChange?: (deg: number) => void;
+  bodyShape: BodyShape;
+  onBodyShapeChange: (shape: BodyShape) => void;
   setUploadedImage: (img: string | null) => void;
   uploadedImage: string | null;
   decalVisible: boolean;
@@ -72,6 +75,8 @@ export default function TopMenuBar({
   onLookChange,
   armBendDeg = 0,
   onArmBendChange,
+  bodyShape,
+  onBodyShapeChange,
   setUploadedImage,
   uploadedImage,
   decalVisible,
@@ -136,6 +141,8 @@ export default function TopMenuBar({
           onLookChange={onLookChange}
           armBendDeg={armBendDeg}
           onArmBendChange={onArmBendChange}
+          bodyShape={bodyShape}
+          onBodyShapeChange={onBodyShapeChange}
         />
 
         <section className="ep-section">

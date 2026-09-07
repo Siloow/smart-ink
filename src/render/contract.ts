@@ -20,6 +20,11 @@ export interface RenderContract {
   skinToneId: string;
   poseId: string;
   lookId: string;
+  /**
+   * Sims-style shape sliders, each in [-1, 1]. Omitted when every value is 0.
+   * Applied identically by src/render/bodyShape.ts and sceneImporter.py.
+   */
+  bodyShape?: Record<string, number>;
   lighting?: {
     presetName: string;
     /** Matches LIGHTING_PRESETS[preset].threeIntensityScale in the browser viewport. */
