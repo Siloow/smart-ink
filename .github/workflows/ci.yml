@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main, beta]
+  pull_request:
+    branches: [main, beta]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Typecheck, lint, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      # The production bundle once reached 207 MB because public/ pulled the
+      # whole Blender working tree into dist/. Print the size on every run so a
+      # regression is visible in the log; a hard limit lands once the build is
+      # trimmed (docs/beta-improvement-plan.md, Phase 1).
+      - name: Report dist size
+        run: |
+          echo "## Build output" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          du -sh dist | tee -a "$GITHUB_STEP_SUMMARY"
+          du -sh dist/* | sort -h | tail -n 8 | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
