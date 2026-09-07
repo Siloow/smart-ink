@@ -54,12 +54,6 @@ export default function EditorLeftPanel({ sceneName, bodyMeshId, onBack }: Edito
         <button type="button" className="editor-left-link" onClick={onBack}>
           ← Back to scenes
         </button>
-        <a href="#" className="editor-left-link" onClick={(e) => e.preventDefault()}>
-          ✦ Templates
-        </a>
-        <a href="#" className="editor-left-link" onClick={(e) => e.preventDefault()}>
-          ? Help &amp; Feedback
-        </a>
       </div>
     </aside>
   );

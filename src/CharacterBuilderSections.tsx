@@ -4,6 +4,7 @@ import { REGISTRY } from './render/registry';
 export interface CharacterBuilderSectionsProps {
   bodyMeshId: string;
   skinToneId: string;
+  /** Kept in the scene and render contract; the selector is hidden until poses work end to end. */
   poseId: string;
   lookId: string;
   onBodyChange: (id: string) => void;
@@ -30,11 +31,9 @@ const hideOnError = (e: React.SyntheticEvent<HTMLImageElement>) => {
 export default function CharacterBuilderSections({
   bodyMeshId,
   skinToneId,
-  poseId,
   lookId,
   onBodyChange,
   onSkinChange,
-  onPoseChange,
   onLookChange,
   armBendDeg = 0,
   onArmBendChange,
@@ -90,25 +89,14 @@ export default function CharacterBuilderSections({
         </div>
       </Section>
 
-      <Section label="Pose">
-        <div className="ep-pill-row">
-          {REGISTRY.poses.map((p) => {
-            const selected = p.id === poseId;
-            return (
-              <button
-                key={p.id}
-                type="button"
-                className="ep-pill"
-                aria-pressed={selected}
-                onClick={() => onPoseChange(p.id)}
-              >
-                {p.label}
-              </button>
-            );
-          })}
-        </div>
-        {showArmRig && onArmBendChange && (
-          <div className="ep-field" style={{ marginTop: 12 }}>
+      {/*
+        Pose presets (REGISTRY.poses) are hidden until they drive both the
+        preview and the Blender render — see docs/beta-improvement-plan.md,
+        Phase 3. The elbow rig on the Human body works today, so it stays.
+      */}
+      {showArmRig && onArmBendChange && (
+        <Section label="Pose">
+          <div className="ep-field">
             <div className="ep-field-row">
               <span className="ep-field-label">Right elbow</span>
               <span className="ep-field-label">{Math.round(armBendDeg)}°</span>
@@ -127,8 +115,8 @@ export default function CharacterBuilderSections({
               Place a tattoo on the arm, then bend to preview UV deformation.
             </p>
           </div>
-        )}
-      </Section>
+        </Section>
+      )}
 
       <Section label="Lighting">
         <div className="cb-grid cb-grid-3">

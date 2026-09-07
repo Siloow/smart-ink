@@ -16,13 +16,6 @@ export interface LoginPageProps {
   onOpenInvite?: () => void;
 }
 
-const showcase = [
-  { emoji: '🎮', gradient: 'linear-gradient(135deg,#2a1535,#1a2540)', name: 'Interactive previews', author: '@DesignGabor' },
-  { emoji: '🤖', gradient: 'linear-gradient(135deg,#201530,#352040)', name: 'Character meshes', author: '@heyvlad' },
-  { emoji: '⚙️', gradient: 'linear-gradient(135deg,#1a2030,#252535)', name: 'Studio workflow', author: '@heyvlad' },
-  { emoji: '🏭', gradient: 'linear-gradient(135deg,#1a1a2e,#2a2040)', name: 'Export & share', author: '@elcord' },
-];
-
 export default function LoginPage({ onAuthenticated, onBackToLanding, onOpenInvite }: LoginPageProps) {
   const [email, setEmail] = useState('');
   const [otp, setOtp] = useState('');
@@ -143,26 +136,8 @@ export default function LoginPage({ onAuthenticated, onBackToLanding, onOpenInvi
             ) : (
               <span>Open your invite link.</span>
             )}
-            <br />
-            <a href="#">Privacy</a> · <a href="#">Terms</a>
           </div>
         </div>
-      </div>
-      <div className="login-right">
-        {showcase.map((item, i) => (
-          <div key={i} className="showcase-card">
-            <div className="showcase-img" style={{ background: item.gradient }}>
-              {item.emoji}
-            </div>
-            <div className="showcase-meta">
-              <div className="showcase-icon">✦</div>
-              <div className="showcase-info">
-                <div className="showcase-name">{item.name}</div>
-                <div className="showcase-author">{item.author}</div>
-              </div>
-            </div>
-          </div>
-        ))}
       </div>
     </div>
   );
