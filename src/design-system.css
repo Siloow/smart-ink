@@ -3009,4 +3009,6 @@ body {
   color: var(--text-secondary);
   font-size: 0.9rem;
   letter-spacing: 0.02em;
+  /* Overlay only; the canvas underneath must keep receiving pointer input. */
+  pointer-events: none;
 }

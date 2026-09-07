@@ -88,6 +88,23 @@ function ExportRenderer({ onRendererReady }: { onRendererReady: (renderer: THREE
   return null
 }
 
+/**
+ * Rendered as a Suspense fallback *inside* the R3F tree while the body mesh
+ * loads. It draws nothing; it only flips a flag so the DOM can show a label.
+ *
+ * Do not move the Suspense boundary outside <Canvas>: R3F propagates
+ * suspension to a DOM-level boundary by re-suspending the Canvas component,
+ * and that hide/reveal cycle lost the WebGL context here (blank viewport with
+ * Chrome's sad-face icon, "THREE.WebGLRenderer: Context Lost").
+ */
+function LoadingSignal({ onChange }: { onChange: (loading: boolean) => void }) {
+  useEffect(() => {
+    onChange(true)
+    return () => onChange(false)
+  }, [onChange])
+  return null
+}
+
 type GateView = 'landing' | 'login' | 'invite' | 'invite-code' | 'admin' | 'app'
 
 function initialGateView(): { view: GateView; inviteCode: string | null } {
@@ -154,6 +171,7 @@ function App() {
   const [decalNormal, setDecalNormal] = useState<[number, number, number] | null>(null)
   const [cameraState, setCameraState] = useState<{ position: [number, number, number], target: [number, number, number], fov: number }>(CAMERA_PRESETS.threeQuarter)
   const [performanceMode, setPerformanceMode] = useState(false)
+  const [modelLoading, setModelLoading] = useState(false)
   const [bodyMeshId, setBodyMeshId] = useState('body_full')
   const [skinToneId, setSkinToneId] = useState('tone_03')
   const [poseId, setPoseId] = useState('neutral')
@@ -738,10 +756,10 @@ function App() {
           />
           <div className="editor-canvas-inner">
             {/*
-              Mesh loads suspend inside the Canvas and surface here; a loader or
-              WebGL failure is rethrown by the Canvas and caught by the boundary.
-              Switching body mesh clears the error so the user can recover
-              without leaving the editor.
+              A loader or WebGL failure is rethrown by the Canvas and caught by
+              this boundary. Switching body mesh clears the error so the user
+              can recover without leaving the editor. Loading is handled by a
+              Suspense boundary *inside* the Canvas (see LoadingSignal).
             */}
             <ErrorBoundary
               resetKeys={[model]}
@@ -764,7 +782,6 @@ function App() {
                 />
               )}
             >
-            <Suspense fallback={<div className="editor-canvas-loading">Loading body mesh…</div>}>
             <Canvas
               className="editor-r3f-canvas"
               camera={{ position: cameraState.position, fov: cameraState.fov }}
@@ -781,31 +798,37 @@ function App() {
           performanceMode={performanceMode}
         />
         <LightHandles lights={lights} selectedIndex={selectedLight} onSelect={setSelectedLight} />
-        <ModelWithUVTattoo
-          ref={uvPlacementRef}
-          key={`uv-${model}`}
-          uploadedImage={uploadedImage}
-          model={model}
-          skinToneId={skinToneId}
-          decalRotation={decalRotation}
-          decalScale={decalScale}
-          decalColor={decalColor}
-          decalOpacity={decalOpacity}
-          setDecalVisible={setDecalVisible}
-          showSafeZone={true}
-          lights={lights}
-          intensityScale={LIGHTING_PRESETS[lightingPreset].threeIntensityScale}
-          performanceMode={performanceMode}
-          armBendDeg={armBendDeg}
-        />
+        <Suspense fallback={<LoadingSignal onChange={setModelLoading} />}>
+          <ModelWithUVTattoo
+            ref={uvPlacementRef}
+            key={`uv-${model}`}
+            uploadedImage={uploadedImage}
+            model={model}
+            skinToneId={skinToneId}
+            decalRotation={decalRotation}
+            decalScale={decalScale}
+            decalColor={decalColor}
+            decalOpacity={decalOpacity}
+            setDecalVisible={setDecalVisible}
+            showSafeZone={true}
+            lights={lights}
+            intensityScale={LIGHTING_PRESETS[lightingPreset].threeIntensityScale}
+            performanceMode={performanceMode}
+            armBendDeg={armBendDeg}
+          />
+        </Suspense>
         <OrbitControlsWithCmdLock
           ref={orbitControlsRef}
           cameraState={cameraState}
           setCameraState={setCameraState}
         />
             </Canvas>
-            </Suspense>
             </ErrorBoundary>
+            {modelLoading && (
+              <div className="editor-canvas-loading" role="status">
+                Loading body mesh…
+              </div>
+            )}
           </div>
         </div>
 
