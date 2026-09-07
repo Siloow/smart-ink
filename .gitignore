@@ -33,3 +33,12 @@ smartink-live/renders/*
 smartink-live/__pycache__/
 smartink-live/**/*.pyc
 smartink-live/*.zip
+
+# Blender autosave backups
+*.blend1
+
+# Unreferenced scan model kept locally for experiments (42 MB)
+smartink-live/rp_posed_00178_29_BLD/
+
+# Stray archive
+src.zip
