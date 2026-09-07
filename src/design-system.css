@@ -3092,3 +3092,20 @@ button.editor-toolbar-avatar {
   color: var(--text-secondary);
   margin: 0 0 12px;
 }
+
+.render-history-share {
+  margin: 8px 0 0;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.render-history-share a {
+  color: var(--accent-blue);
+}
+
+.render-history-preview-actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

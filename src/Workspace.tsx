@@ -28,6 +28,7 @@ import { REGISTRY, findById } from './render/registry'
 import { migrateScene } from './sceneStorage'
 import { addRenderHistory } from './renderHistoryStorage'
 import RenderHistoryModal from './RenderHistoryModal'
+import { captureThumbnail } from './storage/dataUrl'
 import * as THREE from 'three'
 import type { BetaSession } from './auth/types'
 
@@ -313,44 +314,35 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
         // thumbnail will be updated in a separate effect
       }
       void updateScene(updated).then(() => setCurrentScene(updated))
-    }, 250)
+    }, 600)
     return () => clearTimeout(id)
     // currentScene is deliberately not a dependency: this effect writes it, so
     // including it would re-run on every save and loop forever.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uploadedImage, model, decalVisible, decalRotation, decalScale, decalColor, decalOpacity, decalPosition, decalNormal, background, lightingPreset, cameraState, bodyMeshId, skinToneId, poseId, lookId, qualityTier])
 
-  // Capture thumbnail on every change
+  // Capture a dashboard thumbnail once the user pauses. Encoding the full
+  // canvas on every change produced multi-megabyte data URLs and a save per
+  // slider tick; this waits for 1.5 s of quiet and shrinks to 512 px.
   useEffect(() => {
     if (!currentScene || !canvasContainerRef.current) return
-    // Wait for next paint to ensure canvas is rendered
     const timeout = setTimeout(() => {
+      if (document.hidden) return
       const canvas = canvasContainerRef.current?.querySelector('canvas') as HTMLCanvasElement | null
-      if (canvas) {
-        try {
-          const dataUrl = canvas.toDataURL('image/png')
-          // Fallback: treat blank or very small data URLs as failure
-          if (dataUrl && dataUrl.length > 100) {
-            if (currentScene.thumbnail !== dataUrl) {
-              const updated: SceneData = { ...currentScene, thumbnail: dataUrl }
-              void updateScene(updated).then(() => setCurrentScene(updated))
-            }
-          } else {
-            // Fallback: blank or failed
-            if (currentScene.thumbnail !== null) {
-              const updated: SceneData = { ...currentScene, thumbnail: null }
-              void updateScene(updated).then(() => setCurrentScene(updated))
-            }
-          }
-        } catch {
-          // Fallback: error
-          if (currentScene.thumbnail !== null) {
-            const updated: SceneData = { ...currentScene, thumbnail: null }
-            void updateScene(updated).then(() => setCurrentScene(updated))
-          }
-        }
+      if (!canvas) return
+      let dataUrl: string | null = null
+      try {
+        dataUrl = captureThumbnail(canvas, 512)
+      } catch {
+        dataUrl = null
       }
-    }, 200)
+      if (currentScene.thumbnail === dataUrl) return
+      // A stored (signed URL) thumbnail counts as present; only replace it
+      // with a fresh capture, never with null because a capture failed.
+      if (dataUrl === null && currentScene.thumbnail !== null) return
+      const updated: SceneData = { ...currentScene, thumbnail: dataUrl }
+      void updateScene(updated).then(() => setCurrentScene(updated))
+    }, 1500)
     return () => clearTimeout(timeout)
   }, [currentScene, uploadedImage, model, decalRotation, decalScale, decalColor, decalOpacity, decalPosition, decalNormal, background, lightingPreset, cameraState])
 
@@ -611,7 +603,14 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
           <span className="editor-toolbar-spacer" />
         </div>
         <div className="editor-toolbar-actions editor-toolbar-actions--spread">
-          {/* Share returns with shareable render links (plan: Phase 3). */}
+          <button
+            type="button"
+            className="tool-btn tool-btn--ghost"
+            title="Share a render"
+            onClick={() => setShowRenderHistory(true)}
+          >
+            Share
+          </button>
           <button type="button" className="tool-btn tool-btn--ghost" onClick={() => setShowExportModal(true)}>
             Export
           </button>

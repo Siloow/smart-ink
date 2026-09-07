@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { REGISTRY, findById } from './render/registry';
 import {
+  canShareRenders,
   clearRenderHistory,
+  createRenderShareLink,
   deleteRenderHistory,
   getRenderImageBlob,
   listRenderHistory,
@@ -36,6 +38,34 @@ export default function RenderHistoryModal({ onClose }: RenderHistoryModalProps)
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [share, setShare] = useState<{ id: string; text: string; url?: string } | null>(null);
+  const [sharing, setSharing] = useState(false);
+  const shareable = canShareRenders();
+
+  const handleShare = async (entry: RenderHistoryEntry) => {
+    setSharing(true);
+    setShare(null);
+    try {
+      const { url, expiresAt } = await createRenderShareLink(entry.id);
+      let copied = false;
+      try {
+        await navigator.clipboard.writeText(url);
+        copied = true;
+      } catch {
+        copied = false;
+      }
+      const until = new Date(expiresAt).toLocaleDateString();
+      setShare({
+        id: entry.id,
+        url,
+        text: `${copied ? 'Link copied.' : 'Link ready.'} Anyone with it can view this render until ${until}.`,
+      });
+    } catch (e) {
+      setShare({ id: entry.id, text: e instanceof Error ? e.message : 'Could not create a share link.' });
+    } finally {
+      setSharing(false);
+    }
+  };
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -134,7 +164,9 @@ export default function RenderHistoryModal({ onClose }: RenderHistoryModalProps)
           </button>
         </div>
         <p className="render-history-desc">
-          Cycles renders and canvas exports from this browser are saved locally (up to 40).
+          {shareable
+            ? 'Cycles renders and canvas exports are saved to your account (up to 100). Share gives you a read-only link for a client.'
+            : 'Cycles renders and canvas exports from this browser are saved locally (up to 40). Share links need the hosted backend.'}
         </p>
 
         {loading && <p className="render-history-empty">Loading…</p>}
@@ -162,11 +194,33 @@ export default function RenderHistoryModal({ onClose }: RenderHistoryModalProps)
                   <button
                     type="button"
                     className="btn-modal-cancel"
+                    disabled={!shareable || sharing}
+                    title={shareable ? 'Copy a read-only link' : 'Share links need the hosted backend'}
+                    onClick={() => void handleShare(selected)}
+                  >
+                    {sharing ? 'Creating link…' : 'Share link'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-modal-cancel"
                     onClick={() => void handleDelete(selected.id)}
                   >
                     Delete
                   </button>
                 </div>
+                {share && share.id === selected.id && (
+                  <p className="render-history-share" role="status">
+                    {share.text}
+                    {share.url && (
+                      <>
+                        {' '}
+                        <a href={share.url} target="_blank" rel="noreferrer">
+                          Open
+                        </a>
+                      </>
+                    )}
+                  </p>
+                )}
               </div>
             )}
 
