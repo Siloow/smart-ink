@@ -1,5 +1,7 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, Suspense } from 'react'
 import { Canvas, useThree } from '@react-three/fiber'
+import ErrorBoundary from './ErrorBoundary'
+import CrashScreen from './CrashScreen'
 // import { OrbitControls } from '@react-three/drei'
 import OrbitControlsWithCmdLock, { type OrbitControlsHandle } from './OrbitControlsWithCmdLock'
 import ModelWithUVTattoo, { type ModelWithUVTattooHandle } from './ModelWithUVTattoo'
@@ -686,14 +688,7 @@ function App() {
           <span className="editor-toolbar-spacer" />
         </div>
         <div className="editor-toolbar-actions editor-toolbar-actions--spread">
-          <button
-            type="button"
-            className="tool-btn tool-btn--ghost"
-            title="Share"
-            onClick={() => {}}
-          >
-            Share
-          </button>
+          {/* Share returns with shareable render links (plan: Phase 3). */}
           <button type="button" className="tool-btn tool-btn--ghost" onClick={() => setShowExportModal(true)}>
             Export
           </button>
@@ -742,6 +737,34 @@ function App() {
             }}
           />
           <div className="editor-canvas-inner">
+            {/*
+              Mesh loads suspend inside the Canvas and surface here; a loader or
+              WebGL failure is rethrown by the Canvas and caught by the boundary.
+              Switching body mesh clears the error so the user can recover
+              without leaving the editor.
+            */}
+            <ErrorBoundary
+              resetKeys={[model]}
+              fallback={({ error, reset }) => (
+                <CrashScreen
+                  inline
+                  title="The 3D preview stopped"
+                  body="Your scene is saved. Try again, pick a different body, or go back to your scenes."
+                  error={error}
+                  actions={[
+                    { label: 'Try again', onClick: reset, primary: true },
+                    {
+                      label: 'Back to scenes',
+                      onClick: () => {
+                        reset()
+                        setShowDashboard(true)
+                      },
+                    },
+                  ]}
+                />
+              )}
+            >
+            <Suspense fallback={<div className="editor-canvas-loading">Loading body mesh…</div>}>
             <Canvas
               className="editor-r3f-canvas"
               camera={{ position: cameraState.position, fov: cameraState.fov }}
@@ -781,6 +804,8 @@ function App() {
           setCameraState={setCameraState}
         />
             </Canvas>
+            </Suspense>
+            </ErrorBoundary>
           </div>
         </div>
 
