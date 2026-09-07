@@ -4,6 +4,17 @@ Branch: `beta-improvements` (cut from `beta` at `1f8bd4f`, 2026-09-07).
 
 This is a read of the beta as it stands on the branch, followed by a phased plan. Every finding below was checked against the code, the build output, or the toolchain in this session; nothing is guessed.
 
+## Progress
+
+| Phase | Status | Notes |
+| --- | --- | --- |
+| 0 — Stabilize | Done 2026-09-07 | Typecheck and lint pass; CI added; error boundaries; dead controls and placeholder content removed; Pose hidden; backups and stray files untracked. |
+| 1 — Lean build | Not started | |
+| 2 — A real gate | Not started | Interim: set `VITE_WAITLIST_ENDPOINT` so leads stop being dropped. |
+| 3 — Scenes follow the user | Not started | |
+| 4 — Render service | Not started | |
+| 5 — Learn from testers | Not started | |
+
 ## Where the beta stands
 
 | Check | Result |
