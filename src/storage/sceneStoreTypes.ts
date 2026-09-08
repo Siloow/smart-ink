@@ -1,4 +1,5 @@
 import { normalizeShape } from '../render/bodyShape';
+import { REGION_INDEX, type BodyRegionId } from '../render/bodyRegions';
 import type { SceneData } from '../types';
 
 export interface SceneStore {
@@ -9,21 +10,21 @@ export interface SceneStore {
   getScene(id: string): Promise<SceneData | undefined>;
 }
 
-const MODEL_TO_BODY: Record<string, string> = {
-  FinalBaseMesh: 'body_full',
-  Monk: 'forearm',
-  Human: 'human',
-};
+/** Bodies that existed before the figure was cut into regions. */
+const RETIRED_BODIES = new Set(['forearm', 'human']);
 
 /** Fills in fields added after a scene was saved. */
 export function migrateScene(s: SceneData): SceneData {
   return {
     ...s,
-    bodyMeshId: s.bodyMeshId ?? MODEL_TO_BODY[s.model] ?? 'body_full',
+    // The forearm and human bodies were replaced by regions of the figure.
+    model: 'FinalBaseMesh',
+    bodyMeshId: !s.bodyMeshId || RETIRED_BODIES.has(s.bodyMeshId) ? 'body_full' : s.bodyMeshId,
     skinToneId: s.skinToneId ?? 'tone_03',
     poseId: s.poseId ?? 'neutral',
     lookId: s.lookId ?? 'studio_softbox',
     qualityTier: s.qualityTier ?? 'preview',
     bodyShape: normalizeShape(s.bodyShape),
+    bodyRegion: s.bodyRegion && s.bodyRegion in REGION_INDEX ? (s.bodyRegion as BodyRegionId) : null,
   };
 }

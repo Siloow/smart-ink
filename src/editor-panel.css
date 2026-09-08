@@ -408,3 +408,133 @@
   opacity: 0.45;
   cursor: not-allowed;
 }
+
+/* ---------- Focus: which body part the viewport shows ---------- */
+.region-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.region-chip {
+  padding: 7px 8px;
+  border-radius: var(--ep-radius-md);
+  border: 1px solid var(--ep-border);
+  background: var(--ep-surface);
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  cursor: pointer;
+  text-align: center;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.region-chip:first-child {
+  grid-column: 1 / -1;
+}
+
+.region-chip:hover {
+  color: var(--text-primary);
+  border-color: var(--ep-accent);
+}
+
+.region-chip[aria-pressed='true'] {
+  background: var(--ep-accent);
+  border-color: var(--ep-accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* ---------- Body shape sliders ---------- */
+.shape-presets {
+  margin-bottom: 4px;
+}
+
+.shape-group {
+  margin-top: 12px;
+  border-radius: var(--ep-radius-md);
+  padding: 2px 4px 4px;
+  transition: background 0.12s;
+}
+
+.shape-group:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.shape-group-label {
+  margin: 0 0 6px;
+  font-size: 0.64rem;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.shape-field {
+  margin-bottom: 8px;
+}
+
+.shape-field-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 3px;
+}
+
+.shape-field-label {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.shape-value {
+  font-size: 0.74rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  background: none;
+  border: 0;
+  padding: 0 2px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.shape-value:hover {
+  color: var(--text-primary);
+  text-decoration: underline;
+}
+
+.shape-range {
+  --shape-track: #33333d;
+  --shape-fill: var(--ep-accent, #4d7cff);
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 5px;
+  border-radius: 3px;
+  cursor: pointer;
+  outline: none;
+}
+
+.shape-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid var(--shape-fill);
+  cursor: grab;
+}
+
+.shape-range::-moz-range-thumb {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid var(--shape-fill);
+  cursor: grab;
+}
+
+.shape-range:focus-visible {
+  box-shadow: 0 0 0 2px var(--shape-fill);
+}

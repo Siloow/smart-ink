@@ -28,7 +28,17 @@ const OrbitControlsWithCmdLock = forwardRef<OrbitControlsHandle, Props>(function
   ref
 ) {
   const controlsRef = useRef<React.ElementRef<typeof OrbitControls>>(null);
-  const { camera, gl } = useThree();
+  const { camera, gl, scene } = useThree();
+
+  // ModelWithUVTattoo pauses orbiting through scene.orbitControls while it
+  // drags a tattoo or drives the radial menu, so publish the instance here.
+  useEffect(() => {
+    const s = scene as THREE.Scene & { orbitControls?: unknown };
+    s.orbitControls = controlsRef.current;
+    return () => {
+      delete s.orbitControls;
+    };
+  }, [scene]);
 
   useImperativeHandle(
     ref,

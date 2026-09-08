@@ -25,6 +25,11 @@ export interface RenderContract {
    * Applied identically by src/render/bodyShape.ts and sceneImporter.py.
    */
   bodyShape?: Record<string, number>;
+  /**
+   * Region to cut out ('head', 'torso', 'armLeft', …). Omitted for the whole
+   * figure. sceneImporter.py deletes everything else before rendering.
+   */
+  bodyRegion?: string;
   lighting?: {
     presetName: string;
     /** Matches LIGHTING_PRESETS[preset].threeIntensityScale in the browser viewport. */

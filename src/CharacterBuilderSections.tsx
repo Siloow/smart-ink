@@ -1,31 +1,30 @@
 import type { ReactNode } from 'react';
 import { REGISTRY } from './render/registry';
 import {
+  BODY_SHAPE_PARAMS,
   BODY_SHAPE_PRESETS,
   DEFAULT_BODY_SHAPE,
-  bodyShapeParamsFor,
   formatShapeValue,
   isDefaultShape,
   isPresetActive,
   shapeFromPreset,
   type BodyShape,
-  type BodyShapeGroup,
+  type BodyShapeKey,
 } from './render/bodyShape';
+import { BODY_REGIONS, SHAPE_PANEL_GROUPS, type BodyRegionId } from './render/bodyRegions';
 
 export interface CharacterBuilderSectionsProps {
-  bodyMeshId: string;
   skinToneId: string;
-  /** Kept in the scene and render contract; the selector is hidden until poses work end to end. */
-  poseId: string;
   lookId: string;
-  onBodyChange: (id: string) => void;
   onSkinChange: (id: string) => void;
-  onPoseChange: (id: string) => void;
   onLookChange: (id: string) => void;
-  armBendDeg?: number;
-  onArmBendChange?: (deg: number) => void;
   bodyShape: BodyShape;
   onBodyShapeChange: (shape: BodyShape) => void;
+  /** Body part cut out in the viewport, or null for the whole figure. */
+  isolateRegion: BodyRegionId | null;
+  onIsolateRegionChange: (region: BodyRegionId | null) => void;
+  /** Tints matching regions in the viewport while a control is hovered. */
+  onHighlightRegions: (regions: BodyRegionId[]) => void;
 }
 
 function Section({ label, children }: { label: string; children: ReactNode }) {
@@ -41,55 +40,69 @@ const hideOnError = (e: React.SyntheticEvent<HTMLImageElement>) => {
   e.currentTarget.style.display = 'none';
 };
 
+const PARAM_BY_KEY = new Map(BODY_SHAPE_PARAMS.map((p) => [p.key, p]));
+
+/** Track filled from the centre out, so a bipolar value reads at a glance. */
+function trackStyle(value: number): React.CSSProperties {
+  const pct = ((value + 1) / 2) * 100;
+  const lo = Math.min(50, pct);
+  const hi = Math.max(50, pct);
+  return {
+    background: `linear-gradient(90deg,
+      var(--shape-track) 0%, var(--shape-track) ${lo}%,
+      var(--shape-fill) ${lo}%, var(--shape-fill) ${hi}%,
+      var(--shape-track) ${hi}%, var(--shape-track) 100%)`,
+  };
+}
+
 export default function CharacterBuilderSections({
-  bodyMeshId,
   skinToneId,
   lookId,
-  onBodyChange,
   onSkinChange,
   onLookChange,
-  armBendDeg = 0,
-  onArmBendChange,
   bodyShape,
   onBodyShapeChange,
+  isolateRegion,
+  onIsolateRegionChange,
+  onHighlightRegions,
 }: CharacterBuilderSectionsProps) {
-  const showArmRig = bodyMeshId === 'human';
-  const shapeParams = bodyShapeParamsFor(bodyMeshId);
-  const shapeGroups = shapeParams.reduce<Array<{ group: BodyShapeGroup; params: typeof shapeParams }>>(
-    (acc, param) => {
-      const existing = acc.find((g) => g.group === param.group);
-      if (existing) existing.params.push(param);
-      else acc.push({ group: param.group, params: [param] });
-      return acc;
-    },
-    []
-  );
-  const setShapeValue = (key: keyof BodyShape, value: number) =>
+  const setShapeValue = (key: BodyShapeKey, value: number) =>
     onBodyShapeChange({ ...bodyShape, [key]: value });
 
   return (
     <>
-      <Section label="Body">
-        <div className="cb-grid cb-grid-2">
-          {REGISTRY.bodyMeshes.map((b) => {
-            const selected = b.id === bodyMeshId;
-            return (
-              <button
-                key={b.id}
-                type="button"
-                className={`cb-card${selected ? ' selected' : ''}`}
-                aria-pressed={selected}
-                onClick={() => onBodyChange(b.id)}
-              >
-                <span className="cb-thumb">
-                  <img src={b.thumbnail} alt="" onError={hideOnError} />
-                </span>
-                <span className="cb-card-label">{b.label}</span>
-                {selected && <span className="cb-check" aria-hidden>✓</span>}
-              </button>
-            );
-          })}
+      <Section label="Focus">
+        <div className="region-grid">
+          <button
+            type="button"
+            className="region-chip"
+            aria-pressed={isolateRegion === null}
+            onClick={() => onIsolateRegionChange(null)}
+            onMouseEnter={() => onHighlightRegions([])}
+            onMouseLeave={() => onHighlightRegions([])}
+          >
+            Full figure
+          </button>
+          {BODY_REGIONS.map((region) => (
+            <button
+              key={region.id}
+              type="button"
+              className="region-chip"
+              aria-pressed={isolateRegion === region.id}
+              onClick={() =>
+                onIsolateRegionChange(isolateRegion === region.id ? null : region.id)
+              }
+              onMouseEnter={() => onHighlightRegions([region.id])}
+              onMouseLeave={() => onHighlightRegions([])}
+            >
+              {region.label}
+            </button>
+          ))}
         </div>
+        <p className="ep-hint" style={{ marginTop: 8 }}>
+          Cuts the rest of the figure away and frames what is left. Right-click any part in the
+          viewport to shape it.
+        </p>
       </Section>
 
       <Section label="Skin tone">
@@ -130,31 +143,51 @@ export default function CharacterBuilderSections({
             </button>
           ))}
         </div>
-        {shapeGroups.map(({ group, params }) => (
-          <div className="shape-group" key={group}>
-            <p className="shape-group-label">{group}</p>
-            {params.map((param) => (
-              <div className="ep-field shape-field" key={param.key}>
-                <div className="ep-field-row">
-                  <span className="ep-field-label">{param.label}</span>
-                  <span className="shape-value">{formatShapeValue(bodyShape[param.key])}</span>
+
+        {SHAPE_PANEL_GROUPS.map((group) => (
+          <div
+            className="shape-group"
+            key={group.label}
+            onMouseEnter={() => onHighlightRegions(group.regions)}
+            onMouseLeave={() => onHighlightRegions([])}
+          >
+            <p className="shape-group-label">{group.label}</p>
+            {group.params.map((key) => {
+              const param = PARAM_BY_KEY.get(key);
+              if (!param) return null;
+              const value = bodyShape[key];
+              return (
+                <div className="shape-field" key={key}>
+                  <div className="shape-field-row">
+                    <span className="shape-field-label">{param.label}</span>
+                    <button
+                      type="button"
+                      className="shape-value"
+                      title="Reset to 0"
+                      onClick={() => setShapeValue(key, 0)}
+                    >
+                      {formatShapeValue(value)}
+                    </button>
+                  </div>
+                  <input
+                    type="range"
+                    className="shape-range"
+                    style={trackStyle(value)}
+                    min={-1}
+                    max={1}
+                    step={0.02}
+                    value={value}
+                    onChange={(e) => setShapeValue(key, Number(e.target.value))}
+                    onDoubleClick={() => setShapeValue(key, 0)}
+                    aria-label={param.label}
+                    title={param.hint}
+                  />
                 </div>
-                <input
-                  type="range"
-                  className="ep-range"
-                  min={-1}
-                  max={1}
-                  step={0.02}
-                  value={bodyShape[param.key]}
-                  onChange={(e) => setShapeValue(param.key, Number(e.target.value))}
-                  onDoubleClick={() => setShapeValue(param.key, 0)}
-                  aria-label={param.label}
-                  title="Double-click to reset"
-                />
-              </div>
-            ))}
+              );
+            })}
           </div>
         ))}
+
         <button
           type="button"
           className="ep-btn ep-btn--block ep-btn--ghost"
@@ -163,41 +196,7 @@ export default function CharacterBuilderSections({
         >
           Reset shape
         </button>
-        {!showArmRig && bodyMeshId === 'forearm' && (
-          <p className="ep-hint" style={{ marginTop: 6 }}>
-            Proportion controls apply to full figures; this body only takes Height and Build.
-          </p>
-        )}
       </Section>
-
-      {/*
-        Pose presets (REGISTRY.poses) are hidden until they drive both the
-        preview and the Blender render — see docs/beta-improvement-plan.md,
-        Phase 3. The elbow rig on the Human body works today, so it stays.
-      */}
-      {showArmRig && onArmBendChange && (
-        <Section label="Pose">
-          <div className="ep-field">
-            <div className="ep-field-row">
-              <span className="ep-field-label">Right elbow</span>
-              <span className="ep-field-label">{Math.round(armBendDeg)}°</span>
-            </div>
-            <input
-              className="ep-range"
-              type="range"
-              min={0}
-              max={120}
-              step={1}
-              value={armBendDeg}
-              onChange={(e) => onArmBendChange(Number(e.target.value))}
-              aria-label="Right elbow bend"
-            />
-            <p className="ep-hint" style={{ marginTop: 6 }}>
-              Place a tattoo on the arm, then bend to preview UV deformation.
-            </p>
-          </div>
-        </Section>
-      )}
 
       <Section label="Lighting">
         <div className="cb-grid cb-grid-3">

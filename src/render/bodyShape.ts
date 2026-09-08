@@ -44,28 +44,25 @@ export const DEFAULT_BODY_SHAPE: BodyShape = {
   head: 0,
 };
 
-export type BodyShapeGroup = 'Overall' | 'Torso' | 'Limbs' | 'Head';
-
 export interface BodyShapeParam {
   key: BodyShapeKey;
   label: string;
-  group: BodyShapeGroup;
-  /** Height-band controls only make sense on a full figure. */
-  figureOnly: boolean;
+  /** Shown under the slider; says what the control actually moves. */
+  hint: string;
 }
 
 export const BODY_SHAPE_PARAMS: BodyShapeParam[] = [
-  { key: 'height', label: 'Height', group: 'Overall', figureOnly: false },
-  { key: 'build', label: 'Build', group: 'Overall', figureOnly: false },
-  { key: 'shoulders', label: 'Shoulders', group: 'Torso', figureOnly: true },
-  { key: 'chest', label: 'Chest', group: 'Torso', figureOnly: true },
-  { key: 'waist', label: 'Waist', group: 'Torso', figureOnly: true },
-  { key: 'belly', label: 'Belly', group: 'Torso', figureOnly: true },
-  { key: 'hips', label: 'Hips', group: 'Torso', figureOnly: true },
-  { key: 'arms', label: 'Arm thickness', group: 'Limbs', figureOnly: true },
-  { key: 'legs', label: 'Leg thickness', group: 'Limbs', figureOnly: true },
-  { key: 'legLength', label: 'Leg length', group: 'Limbs', figureOnly: true },
-  { key: 'head', label: 'Head size', group: 'Head', figureOnly: true },
+  { key: 'height', label: 'Height', hint: 'Scales the whole figure' },
+  { key: 'build', label: 'Build', hint: 'Overall mass, head to foot' },
+  { key: 'shoulders', label: 'Shoulders', hint: 'Width across the deltoids' },
+  { key: 'chest', label: 'Chest', hint: 'Depth and girth of the rib cage' },
+  { key: 'waist', label: 'Waist', hint: 'Girth at the narrowest point' },
+  { key: 'belly', label: 'Belly', hint: 'Front only, below the ribs' },
+  { key: 'hips', label: 'Hips', hint: 'Width across the pelvis' },
+  { key: 'arms', label: 'Arms', hint: 'Thickness, both sides' },
+  { key: 'legs', label: 'Legs', hint: 'Thickness, both sides' },
+  { key: 'legLength', label: 'Leg length', hint: 'Stretches below the hip' },
+  { key: 'head', label: 'Head', hint: 'Size relative to the body' },
 ];
 
 export interface BodyShapePreset {
@@ -83,16 +80,6 @@ export const BODY_SHAPE_PRESETS: BodyShapePreset[] = [
   { id: 'petite', label: 'Petite', values: { height: -0.7, legLength: -0.3, head: 0.15 } },
 ];
 
-/** Whether a mesh is a full figure (bands apply) or a part (only global controls). */
-export function isFigureBody(bodyMeshId: string): boolean {
-  return bodyMeshId !== 'forearm';
-}
-
-export function bodyShapeParamsFor(bodyMeshId: string): BodyShapeParam[] {
-  const figure = isFigureBody(bodyMeshId);
-  return BODY_SHAPE_PARAMS.filter((p) => figure || !p.figureOnly);
-}
-
 function clamp(v: number, lo: number, hi: number): number {
   return v < lo ? lo : v > hi ? hi : v;
 }
@@ -108,14 +95,9 @@ export function normalizeShape(partial?: Partial<BodyShape> | null): BodyShape {
   return out;
 }
 
-/** The shape with controls that do not apply to this body zeroed out. */
-export function effectiveShape(shape: BodyShape, bodyMeshId: string): BodyShape {
-  const allowed = new Set(bodyShapeParamsFor(bodyMeshId).map((p) => p.key));
-  const out: BodyShape = { ...DEFAULT_BODY_SHAPE };
-  for (const key of BODY_SHAPE_KEYS) {
-    if (allowed.has(key)) out[key] = shape[key];
-  }
-  return out;
+/** Clamped copy, with every key present. */
+export function effectiveShape(shape: BodyShape): BodyShape {
+  return normalizeShape(shape);
 }
 
 export function isDefaultShape(shape: BodyShape): boolean {
@@ -289,10 +271,9 @@ export function shapeBounds(deformables: Deformable[]): ShapeBounds {
 export function applyBodyShape(
   deformables: Deformable[],
   bounds: ShapeBounds,
-  shape: BodyShape,
-  bodyMeshId: string
+  shape: BodyShape
 ): void {
-  const s = effectiveShape(shape, bodyMeshId);
+  const s = effectiveShape(shape);
   const T = BODY_SHAPE_TUNING;
   const H = bounds.maxY - bounds.minY;
   const halfW = Math.max(1e-6, (bounds.maxX - bounds.minX) / 2);

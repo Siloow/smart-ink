@@ -1,6 +1,7 @@
 import { RENDER_SCHEMA_VERSION, type RenderContract, type ContractLight } from './contract';
 import { REGISTRY, findById } from './registry';
 import { BODY_SHAPE_KEYS, effectiveShape, isDefaultShape, type BodyShape } from './bodyShape';
+import { REGION_INDEX, type BodyRegionId } from './bodyRegions';
 
 export interface BuilderState {
   bodyMeshId: string;
@@ -9,6 +10,7 @@ export interface BuilderState {
   lookId: string;
   qualityTier: 'preview' | 'final';
   bodyShape?: BodyShape;
+  bodyRegion?: BodyRegionId | null;
 }
 export interface ShotState {
   position: [number, number, number];
@@ -26,7 +28,7 @@ export function buildRenderContract(
   dims: { width: number; height: number },
   lighting?: { presetName: string; intensityScale?: number; lights: ContractLight[] }
 ): RenderContract {
-  const shape = builder.bodyShape ? effectiveShape(builder.bodyShape, builder.bodyMeshId) : null;
+  const shape = builder.bodyShape ? effectiveShape(builder.bodyShape) : null;
   return {
     schemaVersion: RENDER_SCHEMA_VERSION,
     bodyMeshId: builder.bodyMeshId,
@@ -34,6 +36,7 @@ export function buildRenderContract(
     poseId: builder.poseId,
     lookId: builder.lookId,
     ...(shape && !isDefaultShape(shape) ? { bodyShape: { ...shape } } : {}),
+    ...(builder.bodyRegion ? { bodyRegion: builder.bodyRegion } : {}),
     inkTextureUrl,
     camera: { ...shot },
     output: { qualityTier: builder.qualityTier, width: dims.width, height: dims.height },
@@ -51,6 +54,9 @@ export function validateContract(c: RenderContract): string[] {
   if (!findById(REGISTRY.poses, c.poseId)) errs.push(`unknown poseId ${c.poseId}`);
   if (!findById(REGISTRY.looks, c.lookId)) errs.push(`unknown lookId ${c.lookId}`);
   if (!c.inkTextureUrl) errs.push('missing inkTextureUrl');
+  if (c.bodyRegion && !(c.bodyRegion in REGION_INDEX)) {
+    errs.push(`unknown bodyRegion ${c.bodyRegion}`);
+  }
   if (c.bodyShape) {
     for (const [key, value] of Object.entries(c.bodyShape)) {
       if (!(BODY_SHAPE_KEYS as readonly string[]).includes(key)) errs.push(`unknown bodyShape key ${key}`);

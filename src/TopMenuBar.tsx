@@ -5,20 +5,18 @@ import LightingControls from './LightingControls';
 import type { LightDefinition, LightingPresetKey } from './config/lightingPresets';
 import { resolveRig } from './config/lightingPresets';
 import type { BodyShape } from './render/bodyShape';
+import type { BodyRegionId } from './render/bodyRegions';
 
 interface TopMenuBarProps {
-  bodyMeshId: string;
   skinToneId: string;
-  poseId: string;
   lookId: string;
-  onBodyChange: (id: string) => void;
   onSkinChange: (id: string) => void;
-  onPoseChange: (id: string) => void;
   onLookChange: (id: string) => void;
-  armBendDeg?: number;
-  onArmBendChange?: (deg: number) => void;
   bodyShape: BodyShape;
   onBodyShapeChange: (shape: BodyShape) => void;
+  isolateRegion: BodyRegionId | null;
+  onIsolateRegionChange: (region: BodyRegionId | null) => void;
+  onHighlightRegions: (regions: BodyRegionId[]) => void;
   setUploadedImage: (img: string | null) => void;
   uploadedImage: string | null;
   decalVisible: boolean;
@@ -65,18 +63,15 @@ const TATTOO_COLORS = [
 const CAMERA_SHORTCUTS = ['front', 'profile', 'closeup'] as const;
 
 export default function TopMenuBar({
-  bodyMeshId,
   skinToneId,
-  poseId,
   lookId,
-  onBodyChange,
   onSkinChange,
-  onPoseChange,
   onLookChange,
-  armBendDeg = 0,
-  onArmBendChange,
   bodyShape,
   onBodyShapeChange,
+  isolateRegion,
+  onIsolateRegionChange,
+  onHighlightRegions,
   setUploadedImage,
   uploadedImage,
   decalVisible,
@@ -131,18 +126,15 @@ export default function TopMenuBar({
         </header>
 
         <CharacterBuilderSections
-          bodyMeshId={bodyMeshId}
           skinToneId={skinToneId}
-          poseId={poseId}
           lookId={lookId}
-          onBodyChange={onBodyChange}
           onSkinChange={onSkinChange}
-          onPoseChange={onPoseChange}
           onLookChange={onLookChange}
-          armBendDeg={armBendDeg}
-          onArmBendChange={onArmBendChange}
           bodyShape={bodyShape}
           onBodyShapeChange={onBodyShapeChange}
+          isolateRegion={isolateRegion}
+          onIsolateRegionChange={onIsolateRegionChange}
+          onHighlightRegions={onHighlightRegions}
         />
 
         <section className="ep-section">

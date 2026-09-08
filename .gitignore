@@ -42,3 +42,9 @@ smartink-live/rp_posed_00178_29_BLD/
 
 # Stray archive
 src.zip
+
+# Blender source assets and derived exports (80 MB+). The upstream Human Base
+# Meshes bundle is a redistributable download, and everything under derived/ is
+# regenerated from it; the committed outputs are smartink-live/body_full*.blend
+# and public/models/body_*_realistic.*
+assets/

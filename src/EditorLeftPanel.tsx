@@ -1,15 +1,14 @@
 import { useState } from 'react';
-import { REGISTRY, findById } from './render/registry';
 
 interface EditorLeftPanelProps {
   sceneName: string;
-  bodyMeshId: string;
+  /** What the viewport is showing: the whole figure, or one cut-out region. */
+  bodyLabel: string;
   onBack: () => void;
 }
 
-export default function EditorLeftPanel({ sceneName, bodyMeshId, onBack }: EditorLeftPanelProps) {
+export default function EditorLeftPanel({ sceneName, bodyLabel, onBack }: EditorLeftPanelProps) {
   const [objectsTab, setObjectsTab] = useState(true);
-  const bodyLabel = findById(REGISTRY.bodyMeshes, bodyMeshId)?.label ?? bodyMeshId;
 
   return (
     <aside className="editor-left-panel ep-sidebar">

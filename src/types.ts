@@ -1,7 +1,10 @@
+import type { BodyRegionId } from './render/bodyRegions';
+
 export interface SceneData {
   id: string;
   name: string;
-  model: 'Monk' | 'FinalBaseMesh' | 'Human';
+  /** Only one body ships now; kept so older saved scenes still parse. */
+  model: 'FinalBaseMesh';
   decalImage: string | null;
   decalRotation: number;
   decalScale: number;
@@ -25,6 +28,8 @@ export interface SceneData {
   qualityTier?: 'preview' | 'final';
   /** Sims-style shape sliders; see src/render/bodyShape.ts. */
   bodyShape?: Record<string, number>;
+  /** Body part cut out in the editor, or null/absent for the whole figure. */
+  bodyRegion?: BodyRegionId | null;
   createdAt: Date;
   updatedAt: Date;
   createdBy: string;
