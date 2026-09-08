@@ -38,17 +38,32 @@ export interface RenderContract {
   };
   /** UV-space RGBA ink layer (tattoo only, transparent elsewhere). Uploaded URL or data URL. */
   inkTextureUrl: string;
+  /** Place eyeballs in the sockets. Off by default; the sculpt renders lids-closed. */
+  showEyes?: boolean;
+  /** Iris colour, as an sRGB hex. Only applies when showEyes is set. Defaults to dark brown. */
+  eyeColor?: string;
+  /** Hair colour: 'black' | 'dark_brown' | 'brown' | 'auburn' | 'blond' | 'grey'. */
+  hairTone?: string;
   camera: {
     position: [number, number, number];
     target: [number, number, number];
     fov: number;
     aspect: number;
+    /** Portrait lens the cinematic render dollies back to, in mm. Defaults to 85. */
+    lensMm?: number;
+    /** f-stop for the cinematic render's depth of field. Defaults to 2.8. */
     aperture?: number;
+    /** Focus distance override; by default focus is pulled to the tattoo itself. */
     focusDistance?: number;
   };
   output: {
     qualityTier: QualityTier;
     width: number;
     height: number;
+    /**
+     * Cycles sample override for the final tier, within FINAL_SAMPLES bounds.
+     * Absent means the tier's own sample count (see registry.outputTiers).
+     */
+    samples?: number;
   };
 }

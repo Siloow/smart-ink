@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, Suspense } from 'react'
+import type { CSSProperties } from 'react'
 import { Canvas, useThree } from '@react-three/fiber'
 import ErrorBoundary from './ErrorBoundary'
 import CrashScreen from './CrashScreen'
@@ -24,7 +25,7 @@ import {
 import { bakeInkLayer } from './render/bakeInkLayer'
 import { buildRenderContract } from './render/buildContract'
 import type { RenderContract } from './render/contract'
-import { REGISTRY, findById } from './render/registry'
+import { FINAL_SAMPLES, REGISTRY, findById } from './render/registry'
 import { migrateScene } from './sceneStorage'
 import { addRenderHistory } from './renderHistoryStorage'
 import RenderHistoryModal from './RenderHistoryModal'
@@ -113,6 +114,17 @@ interface WorkspaceProps {
  * this lazily so the landing and login pages never pay for three.js, drei,
  * or the storage layers.
  */
+/** Fills the slider track up to the current sample count. */
+function sampleTrackStyle(samples: number): CSSProperties {
+  const pct =
+    ((samples - FINAL_SAMPLES.min) / (FINAL_SAMPLES.max - FINAL_SAMPLES.min)) * 100;
+  return {
+    background: `linear-gradient(90deg,
+      var(--shape-fill) 0%, var(--shape-fill) ${pct}%,
+      var(--shape-track) ${pct}%, var(--shape-track) 100%)`,
+  };
+}
+
 export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps) {
   const [currentScene, setCurrentScene] = useState<SceneData | null>(null)
   const [showDashboard, setShowDashboard] = useState(true)
@@ -198,6 +210,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
   }, [])
   const [lookId, setLookId] = useState('studio_softbox')
   const [qualityTier, setQualityTier] = useState<'preview' | 'final'>('preview')
+  const [finalSamples, setFinalSamples] = useState<number>(FINAL_SAMPLES.default)
   const uvPlacementRef = useRef<ModelWithUVTattooHandle>(null)
   const orbitControlsRef = useRef<OrbitControlsHandle>(null)
 
@@ -280,7 +293,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
     const outHeight = Math.max(1, Math.round(baseWidth / snap.aspect))
 
     const contract = buildRenderContract(
-      { bodyMeshId, skinToneId, poseId, lookId, qualityTier, bodyShape, bodyRegion: isolateRegion },
+      { bodyMeshId, skinToneId, poseId, lookId, qualityTier, finalSamples, bodyShape, bodyRegion: isolateRegion },
       {
         position: snap.position,
         target: snap.target,
@@ -296,7 +309,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
       },
     )
     return { contract, inkBlob }
-  }, [uploadedImage, bodyMeshId, skinToneId, poseId, lookId, qualityTier, bodyShape, isolateRegion, cameraState, threeRenderer, lightingPreset, lights])
+  }, [uploadedImage, bodyMeshId, skinToneId, poseId, lookId, qualityTier, finalSamples, bodyShape, isolateRegion, cameraState, threeRenderer, lightingPreset, lights])
 
   const handleLookChange = useCallback((id: string) => {
     setLookId(id)
@@ -318,6 +331,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
     setPoseId(migrated.poseId!)
     setLookId(migrated.lookId!)
     setQualityTier(migrated.qualityTier!)
+    setFinalSamples(migrated.finalSamples ?? FINAL_SAMPLES.default)
     setBodyShape(normalizeShape(migrated.bodyShape))
     setIsolateRegion(migrated.bodyRegion ?? null)
     const look = findById(REGISTRY.looks, migrated.lookId!)
@@ -367,6 +381,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
         poseId,
         lookId,
         qualityTier,
+        finalSamples,
         bodyShape,
         bodyRegion: isolateRegion,
         // thumbnail will be updated in a separate effect
@@ -377,7 +392,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
     // currentScene is deliberately not a dependency: this effect writes it, so
     // including it would re-run on every save and loop forever.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [uploadedImage, decalVisible, decalRotation, decalScale, decalColor, decalOpacity, decalPosition, decalNormal, background, lightingPreset, cameraState, bodyMeshId, skinToneId, poseId, lookId, qualityTier, bodyShape, isolateRegion])
+  }, [uploadedImage, decalVisible, decalRotation, decalScale, decalColor, decalOpacity, decalPosition, decalNormal, background, lightingPreset, cameraState, bodyMeshId, skinToneId, poseId, lookId, qualityTier, finalSamples, bodyShape, isolateRegion])
 
   // Capture a dashboard thumbnail once the user pauses. Encoding the full
   // canvas on every change produced multi-megabyte data URLs and a save per
@@ -952,6 +967,56 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
               ))}
             </select>
 
+            {qualityTier === 'final' && (
+              <div style={{ marginBottom: 16 }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'baseline',
+                    marginBottom: 8,
+                  }}
+                >
+                  <label className="modal-label" htmlFor="final-samples" style={{ marginBottom: 0 }}>
+                    Final render quality
+                  </label>
+                  <button
+                    type="button"
+                    className="shape-value"
+                    title="Reset to default"
+                    onClick={() => setFinalSamples(FINAL_SAMPLES.default)}
+                  >
+                    {finalSamples} samples
+                  </button>
+                </div>
+                <input
+                  id="final-samples"
+                  type="range"
+                  className="shape-range"
+                  style={sampleTrackStyle(finalSamples)}
+                  min={FINAL_SAMPLES.min}
+                  max={FINAL_SAMPLES.max}
+                  step={FINAL_SAMPLES.step}
+                  value={finalSamples}
+                  onChange={(e) => setFinalSamples(Number(e.target.value))}
+                  onDoubleClick={() => setFinalSamples(FINAL_SAMPLES.default)}
+                  aria-label="Final render quality in Cycles samples"
+                />
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    color: 'var(--text-secondary)',
+                    fontSize: '0.78rem',
+                    marginTop: 6,
+                  }}
+                >
+                  <span>Faster ({FINAL_SAMPLES.min})</span>
+                  <span>Cleaner ({FINAL_SAMPLES.max})</span>
+                </div>
+              </div>
+            )}
+
             <h3 className="modal-blender-title">Export for Blender</h3>
             <p className="modal-blender-desc">
               Download scene data and the Blender script to render this view in Blender (Cycles) for high-quality output.
@@ -1036,7 +1101,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
               Render with Blender Cycles ({getRenderTargetLabel()} server).
               {qualityTier === 'preview'
                 ? ' Fast preview — low samples, ~512px; good for iteration.'
-                : ' Final quality — full resolution; slower on local CPU.'}
+                : ` Final quality — full resolution at ${finalSamples} samples; higher is cleaner but slower.`}
             </p>
             {renderServerOnline !== null && (
               <p style={{ fontSize: '13px', marginBottom: '8px' }}>

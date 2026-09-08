@@ -108,5 +108,8 @@ export const REGISTRY = {
   ] as OutputTierDef[],
 };
 
+/** Bounds for the final-render quality slider; mirrored by sceneImporter.py. */
+export const FINAL_SAMPLES = { min: 64, max: 1024, step: 32, default: 256 } as const;
+
 export const findById = <T extends { id: string }>(list: T[], id: string) =>
   list.find((x) => x.id === id);

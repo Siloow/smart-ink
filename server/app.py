@@ -19,7 +19,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 LIVE_DIR = Path(
     os.environ.get("SMARTINK_LIVE_DIR", REPO_ROOT / "smartink-live")
 ).expanduser()
-RENDER_TIMEOUT_SEC = int(os.environ.get("SMARTINK_RENDER_TIMEOUT", "180"))
+# High-sample final renders on a CPU can run for many minutes; the old 180 s
+# cap cut them off. Override with SMARTINK_RENDER_TIMEOUT.
+RENDER_TIMEOUT_SEC = int(os.environ.get("SMARTINK_RENDER_TIMEOUT", "1800"))
 
 _MAC_BLENDER = Path("/Applications/Blender.app/Contents/MacOS/Blender")
 

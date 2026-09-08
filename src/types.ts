@@ -26,6 +26,8 @@ export interface SceneData {
   poseId?: string;
   lookId?: string;
   qualityTier?: 'preview' | 'final';
+  /** Cycles samples for the final tier; see FINAL_SAMPLES in render/registry.ts. */
+  finalSamples?: number;
   /** Sims-style shape sliders; see src/render/bodyShape.ts. */
   bodyShape?: Record<string, number>;
   /** Body part cut out in the editor, or null/absent for the whole figure. */

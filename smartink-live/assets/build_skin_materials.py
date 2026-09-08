@@ -23,6 +23,15 @@ SKIN_TONES = {
 }
 
 
+def _srgb_to_linear(c: float) -> float:
+    """The swatch table is sRGB; Blender colour sockets are linear.
+
+    Assigning the sRGB triple directly is what made every tone render pale and
+    desaturated -- tone_03's blue channel more than doubles under the mistake.
+    """
+    return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+
 def _shift_rgb(rgb: tuple[float, float, float], red: float = 0.0, darken: float = 0.0) -> tuple[float, float, float]:
     r, g, b = rgb
     r = max(0.0, min(1.0, r + red))
@@ -32,6 +41,7 @@ def _shift_rgb(rgb: tuple[float, float, float], red: float = 0.0, darken: float 
 
 
 def build_skin_material(name: str, base_rgb: tuple[float, float, float]) -> bpy.types.Material:
+    base_rgb = tuple(_srgb_to_linear(c) for c in base_rgb)
     mat = bpy.data.materials.get(name)
     if mat is None:
         mat = bpy.data.materials.new(name=name)

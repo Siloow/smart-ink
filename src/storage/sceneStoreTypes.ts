@@ -1,5 +1,7 @@
 import { normalizeShape } from '../render/bodyShape';
 import { REGION_INDEX, type BodyRegionId } from '../render/bodyRegions';
+import { clampFinalSamples } from '../render/buildContract';
+import { FINAL_SAMPLES } from '../render/registry';
 import type { SceneData } from '../types';
 
 export interface SceneStore {
@@ -24,6 +26,7 @@ export function migrateScene(s: SceneData): SceneData {
     poseId: s.poseId ?? 'neutral',
     lookId: s.lookId ?? 'studio_softbox',
     qualityTier: s.qualityTier ?? 'preview',
+    finalSamples: clampFinalSamples(s.finalSamples ?? FINAL_SAMPLES.default),
     bodyShape: normalizeShape(s.bodyShape),
     bodyRegion: s.bodyRegion && s.bodyRegion in REGION_INDEX ? (s.bodyRegion as BodyRegionId) : null,
   };

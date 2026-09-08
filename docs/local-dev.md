@@ -133,6 +133,24 @@ After editing the generator script or to reset all four tones:
 blender -b smartink-live/assets/skins.blend -P smartink-live/assets/build_skin_materials.py
 ```
 
+Note: `skins.blend` currently has pore nodes that `build_skin_materials.py` does
+not build, so re-running the generator will simplify the authored graph.
+
+### Rebuild the baked skin masks in `assets/derived/`
+
+The cinematic render reads three baked maps per body — `_normal`, `_cavity` and
+`_curvature`. They are tone-neutral, so one set serves all four swatches. All of
+`assets/` is gitignored, so a fresh clone has none of them; the renderer falls
+back to procedural detail and logs which maps it could not find. To build them:
+
+```bash
+./tools/bake-body-textures.sh
+```
+
+That covers both bodies at 4096px and takes a few minutes. Add `--maps normal`
+to re-bake the sculpt normals too, or `--size 1024` for a quick check. Re-run it
+after changing a body sculpt, since the masks are baked from the multires levels.
+
 ---
 
 ## Verification checklist

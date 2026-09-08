@@ -1,5 +1,5 @@
 import { RENDER_SCHEMA_VERSION, type RenderContract, type ContractLight } from './contract';
-import { REGISTRY, findById } from './registry';
+import { FINAL_SAMPLES, REGISTRY, findById } from './registry';
 import { BODY_SHAPE_KEYS, effectiveShape, isDefaultShape, type BodyShape } from './bodyShape';
 import { REGION_INDEX, type BodyRegionId } from './bodyRegions';
 
@@ -9,6 +9,8 @@ export interface BuilderState {
   poseId: string;
   lookId: string;
   qualityTier: 'preview' | 'final';
+  /** Cycles samples for the final tier; ignored for previews. */
+  finalSamples?: number;
   bodyShape?: BodyShape;
   bodyRegion?: BodyRegionId | null;
 }
@@ -17,7 +19,11 @@ export interface ShotState {
   target: [number, number, number];
   fov: number;
   aspect: number;
+  /** Portrait lens the cinematic render dollies back to, in mm. Defaults to 85. */
+  lensMm?: number;
+  /** f-stop for the cinematic render's depth of field. Defaults to 2.8. */
   aperture?: number;
+  /** Focus distance override; by default focus is pulled to the tattoo itself. */
   focusDistance?: number;
 }
 
@@ -39,9 +45,21 @@ export function buildRenderContract(
     ...(builder.bodyRegion ? { bodyRegion: builder.bodyRegion } : {}),
     inkTextureUrl,
     camera: { ...shot },
-    output: { qualityTier: builder.qualityTier, width: dims.width, height: dims.height },
+    output: {
+      qualityTier: builder.qualityTier,
+      width: dims.width,
+      height: dims.height,
+      ...(builder.qualityTier === 'final' && builder.finalSamples
+        ? { samples: clampFinalSamples(builder.finalSamples) }
+        : {}),
+    },
     ...(lighting ? { lighting } : {}),
   };
+}
+
+export function clampFinalSamples(samples: number): number {
+  if (!Number.isFinite(samples)) return FINAL_SAMPLES.default;
+  return Math.round(Math.min(FINAL_SAMPLES.max, Math.max(FINAL_SAMPLES.min, samples)));
 }
 
 export function validateContract(c: RenderContract): string[] {
@@ -53,6 +71,17 @@ export function validateContract(c: RenderContract): string[] {
   if (!findById(REGISTRY.skinTones, c.skinToneId)) errs.push(`unknown skinToneId ${c.skinToneId}`);
   if (!findById(REGISTRY.poses, c.poseId)) errs.push(`unknown poseId ${c.poseId}`);
   if (!findById(REGISTRY.looks, c.lookId)) errs.push(`unknown lookId ${c.lookId}`);
+  const samples = c.output.samples;
+  if (samples !== undefined) {
+    if (
+      typeof samples !== 'number' ||
+      !Number.isFinite(samples) ||
+      samples < FINAL_SAMPLES.min ||
+      samples > FINAL_SAMPLES.max
+    ) {
+      errs.push(`output.samples must be a number in [${FINAL_SAMPLES.min}, ${FINAL_SAMPLES.max}]`);
+    }
+  }
   if (!c.inkTextureUrl) errs.push('missing inkTextureUrl');
   if (c.bodyRegion && !(c.bodyRegion in REGION_INDEX)) {
     errs.push(`unknown bodyRegion ${c.bodyRegion}`);

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { loadScenes, addScene, deleteScene, updateScene } from './sceneStorage';
+import { FINAL_SAMPLES } from './render/registry';
 import type { SceneData } from './types';
 
 interface Props {
@@ -53,6 +54,7 @@ export default function ScenesDashboard({ onSelectScene, onOpenLanding }: Props)
       poseId: 'neutral',
       lookId: 'studio_softbox',
       qualityTier: 'preview',
+      finalSamples: FINAL_SAMPLES.default,
       createdAt: new Date(),
       updatedAt: new Date(),
       createdBy: 'demo',
