@@ -1,6 +1,6 @@
 import type { LightingPresetKey } from '../config/lightingPresets';
 
-export type PreviewModel = 'Monk' | 'FinalBaseMesh' | 'Human';
+export type PreviewModel = 'FinalBaseMesh';
 
 export interface BodyMeshDef {
   id: string;
@@ -8,6 +8,13 @@ export interface BodyMeshDef {
   thumbnail: string;
   previewModel: PreviewModel;
   blendAsset: string;
+  /** Draco-compressed GLB the browser loads. Y-up, +Z front, feet at y=0. */
+  previewUrl: string;
+  /**
+   * Tangent-space normals baked from the multires sculpt onto the base cage,
+   * so the 10.5k-face browser mesh reads like the 678k-face render mesh.
+   */
+  normalMapUrl: string;
 }
 export interface SkinToneDef {
   id: string;
@@ -38,24 +45,21 @@ export const REGISTRY = {
   bodyMeshes: [
     {
       id: 'body_full',
-      label: 'Full figure',
+      label: 'Male figure',
       thumbnail: '/builder/body_full.jpg',
       previewModel: 'FinalBaseMesh',
       blendAsset: 'body_full.blend',
+      previewUrl: '/models/body_male_realistic.glb',
+      normalMapUrl: '/models/body_male_realistic_normal.png',
     },
     {
-      id: 'forearm',
-      label: 'Forearm',
-      thumbnail: '/builder/forearm.jpg',
-      previewModel: 'Monk',
-      blendAsset: 'forearm.blend',
-    },
-    {
-      id: 'human',
-      label: 'Human',
-      thumbnail: '/builder/human.jpg',
-      previewModel: 'Human',
-      blendAsset: 'human.blend',
+      id: 'body_full_female',
+      label: 'Female figure',
+      thumbnail: '/builder/body_full.jpg',
+      previewModel: 'FinalBaseMesh',
+      blendAsset: 'body_full.blend',
+      previewUrl: '/models/body_female_realistic.glb',
+      normalMapUrl: '/models/body_female_realistic_normal.png',
     },
   ] as BodyMeshDef[],
 

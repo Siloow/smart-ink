@@ -17,6 +17,7 @@ import sys
 from mathutils import Euler, Matrix, Vector
 from typing import Any, Dict, List, Optional, Tuple
 
+import bmesh
 import bpy
 
 # ---------------------------------------------------------------------------
@@ -24,10 +25,26 @@ import bpy
 # ---------------------------------------------------------------------------
 
 BODY_MESH_ASSETS: Dict[str, Dict[str, str]] = {
-    "body_full": {"preview": "FinalBaseMesh.obj", "blend": "body_full.blend"},
-    "forearm": {"preview": "monk.glb", "blend": "forearm.blend"},
-    "human": {"preview": "human.obj", "blend": "human.blend"},
+    "body_full": {"preview": "body_male_realistic.glb", "blend": "body_full.blend"},
+    "body_full_female": {
+        "preview": "body_female_realistic.glb",
+        "blend": "body_full_female.blend",
+    },
 }
+
+# Region boundaries on the full figure; mirrors src/render/bodyRegions.ts.
+# Measured off body_male_realistic.glb: between h 0.42 and 0.68 the hanging arm
+# is cleanly separated from the trunk and each entry sits midway across that
+# gap; above 0.68 the upper arm merges into the deltoid, so the boundary holds.
+TORSO_HALF_WIDTH = (
+    (0.00, 0.55), (0.40, 0.55), (0.42, 0.69), (0.46, 0.66),
+    (0.50, 0.60), (0.54, 0.56), (0.58, 0.50), (0.62, 0.47),
+    (0.66, 0.43), (0.68, 0.42), (0.82, 0.42), (0.87, 0.42), (1.00, 0.42),
+)
+REGION_HEAD_FROM = 0.87
+REGION_LEG_TO = 0.46
+REGION_ARM_FROM = 0.42
+BODY_REGION_IDS = ("head", "torso", "armLeft", "armRight", "legLeft", "legRight")
 
 SKIN_TONES: Dict[str, Tuple[float, float, float]] = {
     "tone_01": (0.945, 0.788, 0.647),  # #f1c9a5
@@ -232,9 +249,20 @@ def load_body_mesh(body_mesh_id: str, contract_dir: str) -> Optional[bpy.types.O
             # library load is not an operator -> no context override required
             with bpy.data.libraries.load(path, link=False) as (data_from, data_to):
                 data_to.objects = data_from.objects
+            linked = []
             for obj in data_to.objects:
                 if obj:
                     bpy.context.collection.objects.link(obj)
+                    linked.append(obj)
+            # _pick_imported_body() reads the selection, which an import operator
+            # would have set for us. Linking does not select, so without this the
+            # .blend branch always returned None and fell through to the OBJ.
+            for obj in bpy.context.selected_objects:
+                obj.select_set(False)
+            for obj in linked:
+                obj.select_set(True)
+            if linked:
+                bpy.context.view_layer.objects.active = linked[0]
         elif ext in (".glb", ".gltf", ".obj"):
             def _do_import():
                 if ext in (".glb", ".gltf"):
@@ -387,7 +415,6 @@ BODY_SHAPE_KEYS = (
     "height", "build", "shoulders", "chest", "waist", "belly",
     "hips", "arms", "legs", "legLength", "head",
 )
-FIGURE_ONLY_KEYS = {"shoulders", "chest", "waist", "belly", "hips", "arms", "legs", "legLength", "head"}
 BODY_SHAPE_TUNING: Dict[str, Any] = {
     "height": 0.12,
     "build": 0.03,
@@ -415,11 +442,10 @@ def _smoothstep(e0: float, e1: float, x: float) -> float:
     return t * t * (3.0 - 2.0 * t)
 
 
-def _effective_shape(shape: Optional[Dict[str, Any]], body_mesh_id: str) -> Dict[str, float]:
-    figure = body_mesh_id != "forearm"
+def _effective_shape(shape: Optional[Dict[str, Any]]) -> Dict[str, float]:
     out = {k: 0.0 for k in BODY_SHAPE_KEYS}
     for key, value in (shape or {}).items():
-        if key not in out or (not figure and key in FIGURE_ONLY_KEYS):
+        if key not in out:
             continue
         try:
             out[key] = max(-1.0, min(1.0, float(value)))
@@ -473,7 +499,7 @@ def _body_axes(mesh: bpy.types.Mesh, body: bpy.types.Object) -> Tuple[Vector, Ve
     return up, front
 
 
-def apply_body_shape(body: bpy.types.Object, shape: Optional[Dict[str, Any]], body_mesh_id: str) -> None:
+def apply_body_shape(body: bpy.types.Object, shape: Optional[Dict[str, Any]]) -> None:
     """Vertex deformation matching the browser preview (src/render/bodyShape.ts).
 
     Importers disagree about axes: the OBJ importer keeps mesh data Y-up and
@@ -483,7 +509,7 @@ def apply_body_shape(body: bpy.types.Object, shape: Optional[Dict[str, Any]], bo
     that (side, up, front) basis. Run after UVs are generated and before the
     body is centred.
     """
-    s = _effective_shape(shape, body_mesh_id)
+    s = _effective_shape(shape)
     if all(abs(v) < 1e-4 for v in s.values()):
         return
     mesh = body.data
@@ -491,7 +517,9 @@ def apply_body_shape(body: bpy.types.Object, shape: Optional[Dict[str, Any]], bo
         return
 
     up, front = _body_axes(mesh, body)
-    side = front.cross(up)
+    # up x front points to the figure's own left (+X for a Y-up, +Z-facing
+    # mesh), which is the sign convention src/render/bodyRegions.ts uses.
+    side = up.cross(front)
 
     T = BODY_SHAPE_TUNING
     coords = [v.co.copy() for v in mesh.vertices]
@@ -571,9 +599,238 @@ def apply_body_shape(body: bpy.types.Object, shape: Optional[Dict[str, Any]], bo
     print(f"[smartink] Applied body shape ({active}); up={tuple(up)} front={tuple(front)}")
 
 
+def _torso_half_width(h: float) -> float:
+    pts = TORSO_HALF_WIDTH
+    if h <= pts[0][0]:
+        return pts[0][1]
+    for i in range(1, len(pts)):
+        if h <= pts[i][0]:
+            h0, w0 = pts[i - 1]
+            h1, w1 = pts[i]
+            return w0 + (w1 - w0) * ((h - h0) / (h1 - h0))
+    return pts[-1][1]
+
+
+def classify_region(h: float, u: float) -> str:
+    """h is 0 at the feet and 1 at the crown; u is -1..1, positive to the figure's left."""
+    if h >= REGION_HEAD_FROM:
+        return "head"
+    if h >= REGION_ARM_FROM and abs(u) > _torso_half_width(h):
+        return "armLeft" if u >= 0 else "armRight"
+    if h < REGION_LEG_TO:
+        return "legLeft" if u >= 0 else "legRight"
+    return "torso"
+
+
+def isolate_body_region(body: bpy.types.Object, region_id: Optional[str]) -> None:
+    """Delete everything outside one region, matching the editor's cut-out.
+
+    The browser rejects fragments outside the region, so its cut lands exactly
+    on the boundary; deleting vertices here cuts on the nearest edge loop
+    instead, which trims a fraction wider. Run last, after the body has been
+    centred, so the contract's camera still frames the same place.
+    """
+    if not region_id or region_id not in BODY_REGION_IDS:
+        return
+    mesh = body.data
+    if not isinstance(mesh, bpy.types.Mesh) or len(mesh.vertices) == 0:
+        return
+
+    up, front = _body_axes(mesh, body)
+    # up x front points to the figure's own left (+X for a Y-up, +Z-facing
+    # mesh), which is the sign convention src/render/bodyRegions.ts uses.
+    side = up.cross(front)
+    xs = [v.co.dot(side) for v in mesh.vertices]
+    ys = [v.co.dot(up) for v in mesh.vertices]
+    min_x, max_x = min(xs), max(xs)
+    min_y, max_y = min(ys), max(ys)
+    height = max_y - min_y
+    if height <= 0:
+        return
+    half_w = max(1e-6, (max_x - min_x) / 2.0)
+    cx = (min_x + max_x) / 2.0
+
+    bm = bmesh.new()
+    bm.from_mesh(mesh)
+    doomed = [
+        v for v in bm.verts
+        if classify_region((v.co.dot(up) - min_y) / height, (v.co.dot(side) - cx) / half_w) != region_id
+    ]
+    kept = len(bm.verts) - len(doomed)
+    if kept == 0:
+        bm.free()
+        print(f"[smartink] Region '{region_id}' selected nothing; keeping the whole figure.")
+        return
+    bmesh.ops.delete(bm, geom=doomed, context="VERTS")
+    bm.to_mesh(mesh)
+    bm.free()
+    mesh.update()
+    print(f"[smartink] Cut out '{region_id}': kept {kept} of {kept + len(doomed)} verts.")
+
+
 def apply_pose(pose_id: str, body: bpy.types.Object) -> None:
     # Pose library not bundled locally; server resolves serverPose assets.
     _ = pose_id, body
+
+
+# ---------------------------------------------------------------------------
+# Cinematic rig
+#
+# The browser preview shades with parallel-ray directionals because that is
+# what a cheap viewport shader can do. Mirroring those one-for-one into Cycles
+# throws away everything Cycles is good at: soft shadows come from light *size*,
+# and skin only reads as skin with subsurface. So the render path builds its own
+# rig instead, and accepts that it will look better than the preview.
+#
+# Positions are polar around the figure and rotated to follow the camera, so the
+# key stays off the camera's shoulder no matter how the user has orbited.
+# (azimuth offset in degrees, distance, height, energy W, size m, colour)
+# ---------------------------------------------------------------------------
+CINEMATIC_RIGS: Dict[str, Dict[str, Any]] = {
+    "studio_softbox": {
+        "bg": (0.012, 0.013, 0.016),
+        "backdrop": (0.045, 0.047, 0.052),
+        "lights": (
+            (35, 5.4, 3.0, 430, 3.5, (1.00, 0.95, 0.90)),
+            (-50, 5.0, 1.2, 85, 4.0, (0.78, 0.85, 1.00)),
+            (168, 4.6, 3.4, 700, 1.6, (1.00, 0.83, 0.68)),
+            (-140, 4.6, 0.3, 180, 1.4, (1.00, 0.76, 0.60)),
+        ),
+    },
+    "window_daylight": {
+        "bg": (0.040, 0.046, 0.058),
+        "backdrop": (0.100, 0.104, 0.112),
+        "lights": (
+            (58, 4.6, 2.4, 900, 4.5, (1.00, 0.98, 0.95)),
+            (-62, 5.2, 1.4, 240, 4.5, (0.82, 0.88, 1.00)),
+            (170, 5.0, 3.0, 420, 2.0, (0.95, 0.97, 1.00)),
+        ),
+    },
+    "dramatic_rim": {
+        "bg": (0.004, 0.004, 0.006),
+        "backdrop": (0.020, 0.020, 0.024),
+        "lights": (
+            (28, 5.0, 2.8, 520, 2.0, (1.00, 0.94, 0.88)),
+            (-70, 5.4, 1.0, 45, 3.0, (0.72, 0.80, 1.00)),
+            (155, 4.2, 3.2, 1500, 1.2, (1.00, 0.80, 0.62)),
+            (-152, 4.2, 0.5, 620, 1.0, (1.00, 0.72, 0.55)),
+        ),
+    },
+}
+
+
+def _camera_azimuth() -> float:
+    """Angle of the camera around the figure, or the default front if unset."""
+    cam = bpy.context.scene.camera
+    if cam is None:
+        return math.radians(-90.0)
+    return math.atan2(cam.location.y, cam.location.x)
+
+
+def _add_area_light(name, loc, energy, size, color, target=(0.0, 0.0, 0.0)):
+    data = bpy.data.lights.new(name, "AREA")
+    data.energy = energy
+    data.size = size
+    data.color = color
+    obj = bpy.data.objects.new(name, data)
+    bpy.context.scene.collection.objects.link(obj)
+    obj.location = Vector(loc)
+    direction = Vector(target) - obj.location
+    if direction.length > 0.001:
+        obj.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
+    return obj
+
+
+def build_cinematic_rig(look_id: str, intensity_scale: float = 1.0, body_height: float = 4.2) -> None:
+    """Area-light rig plus a seamless backdrop, both oriented to the camera."""
+    rig = CINEMATIC_RIGS.get(look_id, CINEMATIC_RIGS["studio_softbox"])
+    theta = _camera_azimuth()
+    aim = (0.0, 0.0, body_height * 0.05)
+
+    for i, (az, dist, height, energy, size, color) in enumerate(rig["lights"]):
+        a = theta + math.radians(az)
+        _add_area_light(
+            f"cine_{i}",
+            (dist * math.cos(a), dist * math.sin(a), height),
+            energy * max(0.15, intensity_scale),
+            size,
+            color,
+            aim,
+        )
+
+    world = bpy.context.scene.world
+    if world and world.use_nodes:
+        for node in world.node_tree.nodes:
+            if node.type == "BACKGROUND":
+                node.inputs["Color"].default_value = (*rig["bg"], 1.0)
+                node.inputs["Strength"].default_value = 1.0
+
+    # Floor plus a wall placed opposite the camera, so the figure never stands
+    # in front of a visible horizon line and the contact shadow has a surface.
+    floor_z = -body_height / 2.0 - 0.02
+    back = theta + math.pi
+    mat = bpy.data.materials.new("cine_backdrop")
+    mat.use_nodes = True
+    bsdf = mat.node_tree.nodes["Principled BSDF"]
+    bsdf.inputs["Base Color"].default_value = (*rig["backdrop"], 1.0)
+    bsdf.inputs["Roughness"].default_value = 0.62
+
+    bpy.ops.mesh.primitive_plane_add(size=30, location=(0, 0, floor_z))
+    floor = bpy.context.active_object
+    bpy.ops.mesh.primitive_plane_add(
+        size=30, location=(7.5 * math.cos(back), 7.5 * math.sin(back), floor_z + 7.0)
+    )
+    wall = bpy.context.active_object
+    wall.rotation_euler = (math.radians(90), 0.0, back + math.pi / 2)
+    for obj in (floor, wall):
+        obj.data.materials.append(mat)
+        obj.is_shadow_catcher = False
+
+
+def apply_cinematic_grade(quality_tier: str) -> None:
+    """AgX rolls highlights off instead of clipping them to white."""
+    view = bpy.context.scene.view_settings
+    try:
+        view.view_transform = "AgX"
+        view.look = "AgX - Medium High Contrast"
+    except TypeError:
+        view.view_transform = "Filmic"
+    view.exposure = 0.0
+    if quality_tier != "preview":
+        bpy.context.scene.cycles.use_denoising = True
+
+
+def enhance_skin_realism(body: bpy.types.Object) -> None:
+    """Subsurface and a thin specular coat: the difference between skin and wax.
+
+    It matters more here than on a bare figure, because tattoo ink reads as ink
+    only when it sits under a translucent, slightly glossy surface.
+    """
+    if not body.data.materials:
+        return
+    mat = body.data.materials[0]
+    if not mat.use_nodes:
+        return
+    bsdf = next((n for n in mat.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None)
+    if not bsdf:
+        return
+    settings = {
+        "Subsurface Weight": 0.22,
+        "Subsurface Scale": 0.06,
+        "Roughness": 0.52,
+        "Specular IOR Level": 0.36,
+        "Coat Weight": 0.05,
+        "Coat Roughness": 0.30,
+    }
+    for name, value in settings.items():
+        socket = bsdf.inputs.get(name)
+        if socket is not None and not socket.is_linked:
+            socket.default_value = value
+    radius = bsdf.inputs.get("Subsurface Radius")
+    if radius is not None and not radius.is_linked:
+        # Red scatters furthest through skin; this is what gives ears and
+        # fingers their warmth instead of a uniform waxy glow.
+        radius.default_value = (0.36, 0.16, 0.10)
 
 
 def apply_world(
@@ -581,6 +838,7 @@ def apply_world(
     lights_override: Optional[List[Dict[str, Any]]] = None,
     intensity_scale: Optional[float] = None,
     preset_name: Optional[str] = None,
+    cinematic: bool = False,
 ) -> None:
     world_def = LOOK_WORLDS.get(look_id, LOOK_WORLDS["studio_softbox"])
     preset = preset_name or world_def.get("lighting", "studio")
@@ -599,6 +857,9 @@ def apply_world(
     bg.inputs["Color"].default_value = (*color, 1.0)
     bg.inputs["Strength"].default_value = 1.0
     links.new(bg.outputs["Background"], output.inputs["Surface"])
+    if cinematic:
+        build_cinematic_rig(look_id, scale)
+        return
     if lights_override:
         setup_lights_from_list(lights_override, scale)
     else:
@@ -820,22 +1081,36 @@ def build_scene(contract_path: str) -> str:
     ensure_box_projection_uvs(body)
     apply_skin(body, contract.get("skinToneId", "tone_03"), contract_dir)
     apply_pose(contract.get("poseId", "neutral"), body)
-    apply_body_shape(body, contract.get("bodyShape"), contract["bodyMeshId"])
+    apply_body_shape(body, contract.get("bodyShape"))
     center_body_at_origin(body)  # the reshaped bounds differ from the loaded ones
+    isolate_body_region(body, contract.get("bodyRegion"))
+
+    # "cinematic" (the default) builds a Cycles-native rig; "preview" mirrors the
+    # browser's lights one-for-one, which is duller but matches the viewport.
+    style = contract.get("renderStyle", "cinematic")
+    cinematic = style != "preview"
+
+    # The camera comes first now: the cinematic rig and the backdrop are placed
+    # relative to it, so the key light follows wherever the user orbited to.
+    setup_camera(contract.get("camera", {}))
+
     lighting = contract.get("lighting") or {}
     apply_world(
         contract.get("lookId", "studio_softbox"),
         lighting.get("lights"),
         lighting.get("intensityScale"),
         lighting.get("presetName"),
+        cinematic=cinematic,
     )
+    if cinematic:
+        enhance_skin_realism(body)
+        apply_cinematic_grade(contract.get("output", {}).get("qualityTier", "final"))
 
     ink_name = contract.get("inkTextureUrl", "ink.png")
     if ink_name.startswith("data:"):
         ink_name = "ink.png"
     ink_path = ink_name if os.path.isabs(ink_name) else os.path.join(contract_dir, os.path.basename(ink_name))
     apply_uv_ink_layer(body, ink_path)
-    setup_camera(contract.get("camera", {}))
     focus_viewport_on_camera()
     return setup_output(contract.get("output", {}), contract_dir)
 

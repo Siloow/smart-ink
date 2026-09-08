@@ -29,13 +29,12 @@ import { migrateScene } from './sceneStorage'
 import { addRenderHistory } from './renderHistoryStorage'
 import RenderHistoryModal from './RenderHistoryModal'
 import { captureThumbnail } from './storage/dataUrl'
-import { DEFAULT_BODY_SHAPE, normalizeShape, type BodyShape } from './render/bodyShape'
+import { DEFAULT_BODY_SHAPE, normalizeShape, type BodyShapeKey, type BodyShape } from './render/bodyShape'
+import { regionLabel, type BodyRegionId } from './render/bodyRegions'
+import RadialShapeMenu from './RadialShapeMenu'
+import type { RegionFraming } from './ModelWithUVTattoo'
 import * as THREE from 'three'
 import type { BetaSession } from './auth/types'
-
-function previewModelForBody(bodyMeshId: string) {
-  return findById(REGISTRY.bodyMeshes, bodyMeshId)?.previewModel ?? 'FinalBaseMesh'
-}
 
 const BG_PRESETS = {
   white: { background: '#fff' },
@@ -77,7 +76,6 @@ const EXPORT_PRESETS = {
 // Component to access Three.js renderer and scene
 function ExportRenderer({ onRendererReady }: { onRendererReady: (renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera) => void }) {
   const { gl, scene, camera } = useThree()
-  
   useEffect(() => {
     onRendererReady(gl, scene, camera)
   }, [gl, scene, camera, onRendererReady])
@@ -122,7 +120,6 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
 
   // Editor state (mirrors SceneData)
   const [uploadedImage, setUploadedImage] = useState<string | null>(null)
-  const [model, setModel] = useState<'Monk' | 'FinalBaseMesh' | 'Human'>('FinalBaseMesh')
   const [decalRotation, setDecalRotation] = useState(0)
   const [decalScale, setDecalScale] = useState(1)
   const [decalColor, setDecalColor] = useState('#ffffff') // Default white (no tint)
@@ -139,11 +136,66 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
   const [cameraState, setCameraState] = useState<{ position: [number, number, number], target: [number, number, number], fov: number }>(CAMERA_PRESETS.threeQuarter)
   const [performanceMode, setPerformanceMode] = useState(false)
   const [modelLoading, setModelLoading] = useState(false)
+  /** False until the viewport container has a real size; see the effect below. */
+  const [canvasHostSized, setCanvasHostSized] = useState(false)
   const [bodyMeshId, setBodyMeshId] = useState('body_full')
   const [skinToneId, setSkinToneId] = useState('tone_03')
   const [poseId, setPoseId] = useState('neutral')
-  const [armBendDeg, setArmBendDeg] = useState(0)
   const [bodyShape, setBodyShape] = useState<BodyShape>(() => ({ ...DEFAULT_BODY_SHAPE }))
+  /** Body part cut out of the viewport, or null for the whole figure. */
+  const [isolateRegion, setIsolateRegion] = useState<BodyRegionId | null>(null)
+  /** Region under the pointer in the viewport. */
+  const [hoverRegion, setHoverRegion] = useState<BodyRegionId | null>(null)
+  /** Regions a hovered inspector control refers to; wins over the pointer. */
+  const [panelRegions, setPanelRegions] = useState<BodyRegionId[]>([])
+  const [shapeMenu, setShapeMenu] = useState<{
+    region: BodyRegionId
+    x: number
+    y: number
+    pointerId: number
+  } | null>(null)
+
+  // An inspector control being hovered says exactly which parts it moves, so
+  // it wins over whatever the pointer happens to be over in the viewport.
+  const highlightRegions: BodyRegionId[] = shapeMenu
+    ? [shapeMenu.region]
+    : panelRegions.length > 0
+      ? panelRegions
+      : hoverRegion
+        ? [hoverRegion]
+        : []
+
+  const handleRegionPress = useCallback(
+    (region: BodyRegionId, x: number, y: number, pointerId: number) => {
+      setShapeMenu({ region, x, y, pointerId })
+    },
+    []
+  )
+
+  const handleShapeValueChange = useCallback((key: BodyShapeKey, value: number) => {
+    setBodyShape((prev) => ({ ...prev, [key]: value }))
+  }, [])
+
+  /** Pull the camera back just far enough to hold a newly cut-out region. */
+  const handleFrameRegion = useCallback((framing: RegionFraming | null) => {
+    if (!framing) return
+    const [cx, cy, cz] = framing.center
+    setCameraState((prev) => {
+      const dir = new THREE.Vector3(
+        prev.position[0] - prev.target[0],
+        prev.position[1] - prev.target[1],
+        prev.position[2] - prev.target[2]
+      )
+      if (dir.lengthSq() < 1e-6) dir.set(0, 0, 1)
+      dir.normalize()
+      const dist = (framing.radius / Math.sin((prev.fov * Math.PI) / 360)) * 1.15
+      return {
+        position: [cx + dir.x * dist, cy + dir.y * dist, cz + dir.z * dist],
+        target: [cx, cy, cz],
+        fov: prev.fov,
+      }
+    })
+  }, [])
   const [lookId, setLookId] = useState('studio_softbox')
   const [qualityTier, setQualityTier] = useState<'preview' | 'final'>('preview')
   const uvPlacementRef = useRef<ModelWithUVTattooHandle>(null)
@@ -168,6 +220,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
   const [liveSyncMessage, setLiveSyncMessage] = useState('')
 
   const canvasContainerRef = useRef<HTMLDivElement>(null)
+  const canvasHostRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!showExportModal) return
@@ -227,7 +280,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
     const outHeight = Math.max(1, Math.round(baseWidth / snap.aspect))
 
     const contract = buildRenderContract(
-      { bodyMeshId, skinToneId, poseId, lookId, qualityTier, bodyShape },
+      { bodyMeshId, skinToneId, poseId, lookId, qualityTier, bodyShape, bodyRegion: isolateRegion },
       {
         position: snap.position,
         target: snap.target,
@@ -243,7 +296,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
       },
     )
     return { contract, inkBlob }
-  }, [uploadedImage, bodyMeshId, skinToneId, poseId, lookId, qualityTier, bodyShape, cameraState, threeRenderer, lightingPreset, lights])
+  }, [uploadedImage, bodyMeshId, skinToneId, poseId, lookId, qualityTier, bodyShape, isolateRegion, cameraState, threeRenderer, lightingPreset, lights])
 
   const handleLookChange = useCallback((id: string) => {
     setLookId(id)
@@ -266,7 +319,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
     setLookId(migrated.lookId!)
     setQualityTier(migrated.qualityTier!)
     setBodyShape(normalizeShape(migrated.bodyShape))
-    setModel(previewModelForBody(migrated.bodyMeshId!))
+    setIsolateRegion(migrated.bodyRegion ?? null)
     const look = findById(REGISTRY.looks, migrated.lookId!)
     if (look) {
       setLightingPreset(look.previewLighting)
@@ -298,7 +351,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
       const updated: SceneData = {
         ...currentScene,
         decalImage: uploadedImage,
-        model,
+        model: 'FinalBaseMesh',
         decalVisible,
         decalRotation,
         decalScale,
@@ -315,6 +368,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
         lookId,
         qualityTier,
         bodyShape,
+        bodyRegion: isolateRegion,
         // thumbnail will be updated in a separate effect
       }
       void updateScene(updated).then(() => setCurrentScene(updated))
@@ -323,7 +377,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
     // currentScene is deliberately not a dependency: this effect writes it, so
     // including it would re-run on every save and loop forever.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [uploadedImage, model, decalVisible, decalRotation, decalScale, decalColor, decalOpacity, decalPosition, decalNormal, background, lightingPreset, cameraState, bodyMeshId, skinToneId, poseId, lookId, qualityTier, bodyShape])
+  }, [uploadedImage, decalVisible, decalRotation, decalScale, decalColor, decalOpacity, decalPosition, decalNormal, background, lightingPreset, cameraState, bodyMeshId, skinToneId, poseId, lookId, qualityTier, bodyShape, isolateRegion])
 
   // Capture a dashboard thumbnail once the user pauses. Encoding the full
   // canvas on every change produced multi-megabyte data URLs and a save per
@@ -348,7 +402,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
       void updateScene(updated).then(() => setCurrentScene(updated))
     }, 1500)
     return () => clearTimeout(timeout)
-  }, [currentScene, uploadedImage, model, decalRotation, decalScale, decalColor, decalOpacity, decalPosition, decalNormal, background, lightingPreset, cameraState, bodyShape])
+  }, [currentScene, uploadedImage, decalRotation, decalScale, decalColor, decalOpacity, decalPosition, decalNormal, background, lightingPreset, cameraState, bodyShape, isolateRegion])
 
   // Reset decal transform
   const handleResetDecal = () => {
@@ -568,6 +622,25 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
     }
   }
 
+  // R3F measures the canvas container as <Canvas> mounts. Mounting the editor
+  // in the same commit that lays the container out can hand it a zero size,
+  // which it never re-measures: the drawing buffer stays at the default
+  // 300x150 and the viewport is blank until the window is resized. (This
+  // predates the region work; it hit roughly the first open of a session.)
+  // Waiting for a measured container removes the race instead of nudging it.
+  useEffect(() => {
+    const el = canvasHostRef.current
+    if (!el) return
+    const measure = () => {
+      const rect = el.getBoundingClientRect()
+      setCanvasHostSized(rect.width > 0 && rect.height > 0)
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [showDashboard])
+
   // Exit photo mode / modals on Escape
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -660,7 +733,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
       <div className="editor-body-row">
         <EditorLeftPanel
           sceneName={currentScene?.name ?? 'Untitled'}
-          bodyMeshId={bodyMeshId}
+          bodyLabel={regionLabel(isolateRegion)}
           onBack={() => setShowDashboard(true)}
         />
 
@@ -672,7 +745,9 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
               transition: 'background 0.4s',
             }}
           />
-          <div className="editor-canvas-inner">
+          <div className="editor-canvas-inner" ref={canvasHostRef}>
+            {canvasHostSized && (
+            <>
             {/*
               A loader or WebGL failure is rethrown by the Canvas and caught by
               this boundary. Switching body mesh clears the error so the user
@@ -680,12 +755,12 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
               Suspense boundary *inside* the Canvas (see LoadingSignal).
             */}
             <ErrorBoundary
-              resetKeys={[model]}
+              resetKeys={[isolateRegion]}
               fallback={({ error, reset }) => (
                 <CrashScreen
                   inline
                   title="The 3D preview stopped"
-                  body="Your scene is saved. Try again, pick a different body, or go back to your scenes."
+                  body="Your scene is saved. Try again, or go back to your scenes."
                   error={error}
                   actions={[
                     { label: 'Try again', onClick: reset, primary: true },
@@ -719,10 +794,9 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
         <Suspense fallback={<LoadingSignal onChange={setModelLoading} />}>
           <ModelWithUVTattoo
             ref={uvPlacementRef}
-            key={`uv-${model}`}
             uploadedImage={uploadedImage}
-            model={model}
             skinToneId={skinToneId}
+            bodyMeshId={bodyMeshId}
             decalRotation={decalRotation}
             decalScale={decalScale}
             decalColor={decalColor}
@@ -732,8 +806,12 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
             lights={lights}
             intensityScale={LIGHTING_PRESETS[lightingPreset].threeIntensityScale}
             performanceMode={performanceMode}
-            armBendDeg={armBendDeg}
             bodyShape={bodyShape}
+            isolateRegion={isolateRegion}
+            highlightRegions={highlightRegions}
+            onHoverRegion={setHoverRegion}
+            onRegionPress={handleRegionPress}
+            onFrameRegion={handleFrameRegion}
           />
         </Suspense>
         <OrbitControlsWithCmdLock
@@ -743,6 +821,8 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
         />
             </Canvas>
             </ErrorBoundary>
+            </>
+            )}
             {modelLoading && (
               <div className="editor-canvas-loading" role="status">
                 Loading body mesh…
@@ -752,27 +832,20 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
         </div>
 
         <TopMenuBar
-          bodyMeshId={bodyMeshId}
           skinToneId={skinToneId}
-          poseId={poseId}
           lookId={lookId}
           lights={lights}
           selectedLight={selectedLight}
           lightingPreset={lightingPreset}
           onSelectLight={setSelectedLight}
           onLightsChange={setLights}
-          onBodyChange={(id) => {
-            setBodyMeshId(id)
-            setModel(previewModelForBody(id))
-            if (id !== 'human') setArmBendDeg(0)
-          }}
           onSkinChange={setSkinToneId}
-          onPoseChange={setPoseId}
           onLookChange={handleLookChange}
-          armBendDeg={armBendDeg}
-          onArmBendChange={setArmBendDeg}
           bodyShape={bodyShape}
           onBodyShapeChange={setBodyShape}
+          isolateRegion={isolateRegion}
+          onIsolateRegionChange={setIsolateRegion}
+          onHighlightRegions={setPanelRegions}
           setUploadedImage={setUploadedImage}
           uploadedImage={uploadedImage}
           decalVisible={decalVisible}
@@ -1026,6 +1099,18 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
             )}
           </div>
         </div>
+      )}
+
+      {shapeMenu && (
+        <RadialShapeMenu
+          region={shapeMenu.region}
+          x={shapeMenu.x}
+          y={shapeMenu.y}
+          pointerId={shapeMenu.pointerId}
+          shape={bodyShape}
+          onChange={handleShapeValueChange}
+          onClose={() => setShapeMenu(null)}
+        />
       )}
 
       {showRenderHistory && (
