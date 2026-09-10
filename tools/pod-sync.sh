@@ -68,18 +68,17 @@ rsync -rlptzD --update -e "$RSH" \
 echo "Synced."
 
 if [[ "$TUNNEL" -eq 0 ]]; then
-  echo "Start the server on the Pod with:"
-  echo "  ssh $POD 'cd $REMOTE_DIR && tools/start-render-server.sh'"
+  echo "Start the server on the Pod with:  ./tools/pod-server.sh start"
   exit 0
 fi
 
 cat <<EOF
 
 Tunnel: http://localhost:$PORT -> Pod:$PORT
-Start the server on the Pod in another terminal if it is not already up:
-  ssh $POD 'cd $REMOTE_DIR && tools/start-render-server.sh'
+If the server is not up yet:  ./tools/pod-server.sh start
 
-Ctrl-C closes the tunnel.
+Ctrl-C closes the tunnel. That is safe mid-render: the server runs under
+tmux on the Pod, so it keeps rendering and you lose only the HTTP response.
 EOF
 
 # -N: no remote command, just forward. ExitOnForwardFailure so a port already
