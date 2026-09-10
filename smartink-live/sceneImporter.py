@@ -198,6 +198,10 @@ def _resolve_asset(contract_dir: str, filename: str) -> Optional[str]:
         return candidate
     script_dir = os.path.dirname(os.path.abspath(__file__))
     for base in (
+        # The script's own directory holds the body meshes. Without this the
+        # only way to find them was for the contract to sit beside them, which
+        # forced every request through one shared directory.
+        script_dir,
         os.path.join(script_dir, ".."),
         os.path.join(script_dir, "..", "..", "public", "models"),
         os.path.join(script_dir, "..", "models"),
@@ -1917,7 +1921,7 @@ def _enable_gpu_devices() -> Optional[str]:
     return None
 
 
-def apply_render_quality(quality_tier: str) -> None:
+def apply_render_quality(quality_tier: str, backend: Optional[str] = None) -> None:
     """Cycles settings that matter for skin: enough bounces to let light leave it."""
     cycles = bpy.context.scene.cycles
     # Subsurface is transmission under the hood; starving the bounce budget
@@ -1942,10 +1946,20 @@ def apply_render_quality(quality_tier: str) -> None:
     bpy.context.scene.render.filter_size = 1.5
     if quality_tier != "preview":
         cycles.use_denoising = True
+        # OptiX denoises on the RT cores, so on NVIDIA it is far cheaper than
+        # OpenImageDenoise on the CPU. Everywhere else (Metal, HIP, CPU) OIDN
+        # is both the better result and the only option.
+        for denoiser in (("OPTIX",) if backend == "OPTIX" else ()) + ("OPENIMAGEDENOISE",):
+            try:
+                cycles.denoiser = denoiser
+            except TypeError:
+                continue  # this build has no such denoiser
+            break
         try:
-            cycles.denoiser = "OPENIMAGEDENOISE"
             cycles.denoising_input_passes = "RGB_ALBEDO_NORMAL"
-            cycles.denoising_prefilter = "ACCURATE"
+            # OptiX has no prefilter setting; OIDN's ACCURATE is worth its cost.
+            if cycles.denoiser == "OPENIMAGEDENOISE":
+                cycles.denoising_prefilter = "ACCURATE"
         except TypeError:
             pass
 
@@ -2384,7 +2398,7 @@ def setup_output(output: Dict[str, Any], contract_dir: str) -> str:
     tier = OUTPUT_TIERS.get(tier_id, OUTPUT_TIERS["final"])
     scene.cycles.samples = resolve_samples(tier_id, tier, output.get("samples"))
     scene.cycles.use_denoising = tier_id != "preview"
-    apply_render_quality(tier_id)
+    apply_render_quality(tier_id, backend)
 
     width = int(output.get("width", tier["max_dim"]))
     height = int(output.get("height", tier["max_dim"]))
