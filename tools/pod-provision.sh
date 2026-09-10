@@ -7,8 +7,11 @@
 # working `blender` is fine; the OptiX check at the end is the real test.
 set -euo pipefail
 
-BLENDER_SERIES="${BLENDER_SERIES:-4.2}"
-BLENDER_VERSION="${BLENDER_VERSION:-4.2.1}"
+# Match the laptop's Blender exactly: a version gap moves Cycles output, so a
+# Pod render would stop being comparable to a local one. Also 4.x predates
+# Blackwell (sm_120) kernels, which is what this Pod has.
+BLENDER_SERIES="${BLENDER_SERIES:-5.2}"
+BLENDER_VERSION="${BLENDER_VERSION:-5.2.1}"
 PREFIX="${PREFIX:-/opt}"
 TARBALL="blender-${BLENDER_VERSION}-linux-x64"
 URL="https://download.blender.org/release/Blender${BLENDER_SERIES}/${TARBALL}.tar.xz"

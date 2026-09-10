@@ -39,19 +39,30 @@ host="${POD%% *}"
 sshport="$(printf '%s\n' "$POD" | sed -n 's/.*-p[[:space:]]*\([0-9]\{1,\}\).*/\1/p')"
 RSH="ssh${sshport:+ -p $sshport}"
 
+# macOS ships openrsync, which claims rsync 2.6.9 compatibility and has no
+# --info. Only pass the progress flag when talking to a real rsync 3.x.
+# A scalar, not an array: macOS still ships bash 3.2, where expanding an empty
+# array under `set -u` is itself an error.
+PROGRESS=""
+if rsync --version 2>/dev/null | head -1 | grep -qv openrsync; then
+  PROGRESS="--info=progress2"
+fi
+
+# -rlptzD rather than -a: the network volume refuses chown, so preserving
+# owner/group (-o -g) makes rsync exit non-zero and take `set -e` with it.
 # Meshes and .blend files are large and rarely change; --update skips
 # re-sending anything the Pod already has a newer copy of. Renders and
 # __pycache__ are outputs, not inputs.
-rsync -az --update --info=progress2 -e "$RSH" \
+rsync -rlptzD --update $PROGRESS -e "$RSH" \
   --exclude 'renders/' \
   --exclude '__pycache__/' \
   --exclude '.DS_Store' \
   "$ROOT/smartink-live/" "$host:$REMOTE_DIR/smartink-live/"
 
-rsync -az --update -e "$RSH" \
+rsync -rlptzD --update -e "$RSH" \
   "$ROOT/server/" "$host:$REMOTE_DIR/server/" \
   --exclude '.venv/' --exclude '__pycache__/'
-rsync -az --update -e "$RSH" \
+rsync -rlptzD --update -e "$RSH" \
   "$ROOT/tools/" "$host:$REMOTE_DIR/tools/" --exclude '__pycache__/'
 
 echo "Synced."
