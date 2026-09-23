@@ -1,17 +1,19 @@
-import type { ReactNode } from 'react';
+import { useId, type ReactNode } from 'react';
 import { REGISTRY } from './render/registry';
 import {
   BODY_SHAPE_PARAMS,
+  BODY_SHAPE_LIMITS,
   BODY_SHAPE_PRESETS,
   DEFAULT_BODY_SHAPE,
-  formatShapeValue,
+  clampShapeValue,
   isDefaultShape,
   isPresetActive,
   shapeFromPreset,
   type BodyShape,
   type BodyShapeKey,
 } from './render/bodyShape';
-import { BODY_REGIONS, SHAPE_PANEL_GROUPS, type BodyRegionId } from './render/bodyRegions';
+import AdjustmentControl from './AdjustmentControl';
+import { SHAPE_PANEL_GROUPS, type BodyRegionId } from './render/bodyRegions';
 
 export interface CharacterBuilderSectionsProps {
   skinToneId: string;
@@ -23,6 +25,7 @@ export interface CharacterBuilderSectionsProps {
   /** Body part cut out in the viewport, or null for the whole figure. */
   isolateRegion: BodyRegionId | null;
   onIsolateRegionChange: (region: BodyRegionId | null) => void;
+  onFrameFocus?: () => void;
   /** Tints matching regions in the viewport while a control is hovered. */
   onHighlightRegions: (regions: BodyRegionId[]) => void;
 }
@@ -36,17 +39,16 @@ function Section({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-const hideOnError = (e: React.SyntheticEvent<HTMLImageElement>) => {
-  e.currentTarget.style.display = 'none';
-};
-
 const PARAM_BY_KEY = new Map(BODY_SHAPE_PARAMS.map((p) => [p.key, p]));
 
-/** Track filled from the centre out, so a bipolar value reads at a glance. */
-function trackStyle(value: number): React.CSSProperties {
-  const pct = ((value + 1) / 2) * 100;
-  const lo = Math.min(50, pct);
-  const hi = Math.max(50, pct);
+/** Fill from the original shape, even when a control has unequal limits. */
+function trackStyle(key: BodyShapeKey, value: number): React.CSSProperties {
+  const { min, max } = BODY_SHAPE_LIMITS[key];
+  const span = max - min;
+  const pct = ((clampShapeValue(key, value) - min) / span) * 100;
+  const zero = ((clampShapeValue(key, 0) - min) / span) * 100;
+  const lo = Math.min(zero, pct);
+  const hi = Math.max(zero, pct);
   return {
     background: `linear-gradient(90deg,
       var(--shape-track) 0%, var(--shape-track) ${lo}%,
@@ -57,54 +59,17 @@ function trackStyle(value: number): React.CSSProperties {
 
 export default function CharacterBuilderSections({
   skinToneId,
-  lookId,
   onSkinChange,
-  onLookChange,
   bodyShape,
   onBodyShapeChange,
-  isolateRegion,
-  onIsolateRegionChange,
   onHighlightRegions,
 }: CharacterBuilderSectionsProps) {
+  const shapeHelpId = useId();
   const setShapeValue = (key: BodyShapeKey, value: number) =>
-    onBodyShapeChange({ ...bodyShape, [key]: value });
+    onBodyShapeChange({ ...bodyShape, [key]: clampShapeValue(key, value) });
 
   return (
     <>
-      <Section label="Focus">
-        <div className="region-grid">
-          <button
-            type="button"
-            className="region-chip"
-            aria-pressed={isolateRegion === null}
-            onClick={() => onIsolateRegionChange(null)}
-            onMouseEnter={() => onHighlightRegions([])}
-            onMouseLeave={() => onHighlightRegions([])}
-          >
-            Full figure
-          </button>
-          {BODY_REGIONS.map((region) => (
-            <button
-              key={region.id}
-              type="button"
-              className="region-chip"
-              aria-pressed={isolateRegion === region.id}
-              onClick={() =>
-                onIsolateRegionChange(isolateRegion === region.id ? null : region.id)
-              }
-              onMouseEnter={() => onHighlightRegions([region.id])}
-              onMouseLeave={() => onHighlightRegions([])}
-            >
-              {region.label}
-            </button>
-          ))}
-        </div>
-        <p className="ep-hint" style={{ marginTop: 8 }}>
-          Cuts the rest of the figure away and frames what is left. Right-click any part in the
-          viewport to shape it.
-        </p>
-      </Section>
-
       <Section label="Skin tone">
         <div className="cb-swatch-row">
           {REGISTRY.skinTones.map((s) => {
@@ -130,6 +95,9 @@ export default function CharacterBuilderSections({
       </Section>
 
       <Section label="Body shape">
+        <p className="ep-hint shape-help" id={shapeHelpId}>
+          Choose a starting shape, then fine-tune it. Zero is the original shape.
+        </p>
         <div className="ep-pill-row shape-presets">
           {BODY_SHAPE_PRESETS.map((preset) => (
             <button
@@ -144,6 +112,8 @@ export default function CharacterBuilderSections({
           ))}
         </div>
 
+        <details className="ep-details shape-adjustments">
+          <summary><span>Fine-tune shape</span><span className="ep-details-summary">{BODY_SHAPE_PRESETS.find(preset => isPresetActive(bodyShape, preset))?.label ?? 'Custom shape'}</span></summary>
         {SHAPE_PANEL_GROUPS.map((group) => (
           <div
             className="shape-group"
@@ -155,38 +125,16 @@ export default function CharacterBuilderSections({
             {group.params.map((key) => {
               const param = PARAM_BY_KEY.get(key);
               if (!param) return null;
-              const value = bodyShape[key];
-              return (
-                <div className="shape-field" key={key}>
-                  <div className="shape-field-row">
-                    <span className="shape-field-label">{param.label}</span>
-                    <button
-                      type="button"
-                      className="shape-value"
-                      title="Reset to 0"
-                      onClick={() => setShapeValue(key, 0)}
-                    >
-                      {formatShapeValue(value)}
-                    </button>
-                  </div>
-                  <input
-                    type="range"
-                    className="shape-range"
-                    style={trackStyle(value)}
-                    min={-1}
-                    max={1}
-                    step={0.02}
-                    value={value}
-                    onChange={(e) => setShapeValue(key, Number(e.target.value))}
-                    onDoubleClick={() => setShapeValue(key, 0)}
-                    aria-label={param.label}
-                    title={param.hint}
-                  />
-                </div>
-              );
+              const value = clampShapeValue(key, bodyShape[key]);
+              const { min, max } = BODY_SHAPE_LIMITS[key];
+              return <AdjustmentControl key={key} label={param.label} value={value} min={min} max={max}
+                step={0.02} resetValue={0} onChange={next => setShapeValue(key, next)}
+                rangeStyle={trackStyle(key, value)} hint={param.hint} />;
             })}
           </div>
         ))}
+
+        </details>
 
         <button
           type="button"
@@ -198,28 +146,6 @@ export default function CharacterBuilderSections({
         </button>
       </Section>
 
-      <Section label="Lighting">
-        <div className="cb-grid cb-grid-3">
-          {REGISTRY.looks.map((l) => {
-            const selected = l.id === lookId;
-            return (
-              <button
-                key={l.id}
-                type="button"
-                className={`cb-card cb-card-sm${selected ? ' selected' : ''}`}
-                aria-pressed={selected}
-                onClick={() => onLookChange(l.id)}
-              >
-                <span className="cb-thumb">
-                  <img src={l.thumbnail} alt="" onError={hideOnError} />
-                </span>
-                <span className="cb-card-label">{l.label}</span>
-                {selected && <span className="cb-check" aria-hidden>✓</span>}
-              </button>
-            );
-          })}
-        </div>
-      </Section>
     </>
   );
 }

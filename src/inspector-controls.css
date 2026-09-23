@@ -1,0 +1,18 @@
+/* Shared number, range and reset controls throughout the editor and Snapshot. */
+.ep-adjustment { display: flex; flex-direction: column; gap: 8px; min-width: 0; margin: 4px 0 12px; }
+.ep-adjustment-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+.ep-adjustment-heading > label { font-size: 12px; font-weight: 500; line-height: 1.4; color: var(--text-primary, #e8e8ec); }
+.ep-adjustment-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.ep-adjustment-number { display: flex; align-items: center; height: 32px; width: 76px; padding-right: 7px; border: 1px solid var(--ep-border, #ffffff26); border-radius: 8px; background: var(--bg-input, #2a2a32); }
+.ep-adjustment-number input { min-width: 0; width: 100%; padding: 7px 4px 7px 8px; border: 0; outline: 0; background: transparent; color: var(--text-primary, #e8e8ec); font: inherit; font-size: 12px; font-variant-numeric: tabular-nums; text-align: right; }
+.ep-adjustment-number span { font-size: 11px; color: var(--text-secondary, #a7acb8); }
+.ep-adjustment-number:focus-within { border-color: var(--ep-accent, #4d7cff); box-shadow: 0 0 0 2px #4d7cff30; }
+.ep-reset-control { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; min-height: 32px; padding: 0; border: 1px solid var(--ep-border, #ffffff26); border-radius: 8px; background: transparent; color: var(--text-secondary, #a7acb8); cursor: pointer; flex-shrink: 0; }
+.ep-reset-control:hover:not(:disabled) { background: var(--ep-surface-hover, #ffffff14); color: var(--text-primary, #e8e8ec); }
+.ep-reset-control:disabled { opacity: .35; cursor: default; }
+.ep-control-hint { margin: 0; color: var(--text-secondary, #a7acb8); font-size: 11px; line-height: 1.5; }
+.ep-adjustment-range { --shape-track: #363642; --shape-fill: var(--ep-accent, #4d7cff); appearance: none; display: block; width: 100%; height: 6px; min-height: 6px; margin: 6px 0; border: 0; border-radius: 999px; background: var(--shape-track); cursor: pointer; accent-color: var(--ep-accent, #4d7cff); }
+.ep-adjustment-range::-webkit-slider-thumb { appearance: none; width: 16px; height: 16px; border: 2px solid var(--shape-fill); border-radius: 50%; background: #f3f4f8; box-shadow: 0 1px 3px #0004; }
+.ep-adjustment-range::-moz-range-thumb { width: 12px; height: 12px; border: 2px solid var(--shape-fill); border-radius: 50%; background: #f3f4f8; }
+.ep-adjustment-range:disabled, .ep-adjustment-number:has(input:disabled) { opacity: .4; cursor: default; }
+.ep-reset-control:focus-visible, .ep-adjustment-range:focus-visible { outline: 2px solid var(--ep-accent, #4d7cff); outline-offset: 4px; }

@@ -51,13 +51,12 @@ async function dehydrateScene(scene: SceneData): Promise<PersistedScene> {
 }
 
 async function loadScenes(): Promise<SceneData[]> {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    const parsed: RawStoredScene[] = raw ? JSON.parse(raw) : [];
-    return Promise.all(parsed.map(hydrateScene));
-  } catch {
-    return [];
-  }
+  const raw = localStorage.getItem(STORAGE_KEY);
+  const parsed: RawStoredScene[] = raw === null ? [] : JSON.parse(raw);
+  if (!Array.isArray(parsed)) throw new Error('Saved scenes could not be read. Please retry.');
+  // Read failures must reject: treating an unavailable collection as empty
+  // lets the next successful write erase every previously saved scene.
+  return Promise.all(parsed.map(hydrateScene));
 }
 
 async function saveScenes(scenes: SceneData[]): Promise<void> {
@@ -65,28 +64,51 @@ async function saveScenes(scenes: SceneData[]): Promise<void> {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted));
 }
 
+// Each mutation reads and rewrites the collection. Dashboard operations and
+// editor saves must share this lock, including after a failed operation.
+let mutations: Promise<void> = Promise.resolve();
+function mutate(action: () => Promise<void>): Promise<void> {
+  const result = mutations.then(action);
+  mutations = result.catch(() => {});
+  return result;
+}
+
 export const localSceneStore: SceneStore = {
-  loadScenes,
-
-  async addScene(scene) {
-    const scenes = await loadScenes();
-    scenes.push(scene);
-    await saveScenes(scenes);
+  async loadScenes() {
+    await mutations;
+    return loadScenes();
   },
 
-  async updateScene(updated) {
-    const scenes = await loadScenes();
-    await saveScenes(scenes.map((s) => (s.id === updated.id ? updated : s)));
+  addScene(scene) {
+    return mutate(async () => {
+      const scenes = await loadScenes();
+      scenes.push(scene);
+      await saveScenes(scenes);
+    });
   },
 
-  async deleteScene(id) {
-    await del(decalKey(id));
-    await del(thumbKey(id));
-    const scenes = (await loadScenes()).filter((s) => s.id !== id);
-    await saveScenes(scenes);
+  updateScene(updated) {
+    return mutate(async () => {
+      const scenes = await loadScenes();
+      if (!scenes.some((scene) => scene.id === updated.id)) {
+        throw new Error('This scene could not be found. Your changes have not been saved.');
+      }
+      await saveScenes(scenes.map((s) => (s.id === updated.id ? updated : s)));
+    });
+  },
+
+  deleteScene(id) {
+    return mutate(async () => {
+      const scenes = (await loadScenes()).filter((s) => s.id !== id);
+      await saveScenes(scenes);
+      // Commit the collection before removing images. Failed cleanup only
+      // leaves unused blobs; it must not make a completed deletion look failed.
+      await Promise.all([del(decalKey(id)), del(thumbKey(id))]).catch(() => {});
+    });
   },
 
   async getScene(id) {
+    await mutations;
     const scenes = await loadScenes();
     return scenes.find((s) => s.id === id);
   },

@@ -1,3 +1,4 @@
+import { BODY_POSE_PRESETS } from './bodyPose';
 import type { LightingPresetKey } from '../config/lightingPresets';
 
 export type PreviewModel = 'FinalBaseMesh';
@@ -71,8 +72,9 @@ export const REGISTRY = {
   ] as SkinToneDef[],
 
   poses: [
-    { id: 'neutral', label: 'Neutral', serverPose: 'pose_neutral' },
-    { id: 'arm_extended', label: 'Arm extended', serverPose: 'pose_arm_extended' },
+    ...BODY_POSE_PRESETS.map(({ id, label }) => ({ id, label, serverPose: id })),
+    { id: 'custom', label: 'Custom pose', serverPose: 'custom' },
+    { id: 'arm_extended', label: 'Arm extended', serverPose: 'arms_out' },
   ] as PoseDef[],
 
   looks: [

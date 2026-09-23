@@ -10,7 +10,21 @@
     "build": "vite build",
     "typecheck": "tsc -b",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:placement": "node tools/surface-placement.test.mjs && node tools/tattoo-bake.test.mjs && node tools/scene-save.test.mjs && node tools/placement-face-mask.test.mjs",
+    "test:demo": "npm run test:placement && node tools/tattoo-upload.test.mjs && node tools/export-presentation.test.mjs && node tools/render-service.test.mjs && node tools/render-proxy.test.mjs && node tools/local-storage.test.mjs && npm run test:shape && npm run test:pose && npm run test:focus && npm run test:appearance && npm run test:studio && npm run test:snapshot && npm run test:inspector",
+    "test:render-server": "PYTHONDONTWRITEBYTECODE=1 server/.venv/bin/python tools/render-server.test.py",
+    "test:shape": "node tools/body-shape.test.mjs && node tools/body-shape-controls.test.mjs && node tools/body-shape-parity.test.mjs",
+    "test:pose": "node tools/body-pose.test.mjs && node tools/body-pose-controls.test.mjs && node tools/body-pose-parity.test.mjs",
+    "test:pose-server": "PYTHONDONTWRITEBYTECODE=1 server/.venv/bin/python tools/body-pose-backend.test.py",
+    "test:focus": "node tools/body-region-mask.test.mjs && node tools/focus-camera.test.mjs && node tools/camera-transition.test.mjs",
+    "test:appearance": "node tools/eyes.test.mjs && node tools/appearance.test.mjs && node tools/appearance-model.test.mjs && node tools/clothing.test.mjs && node tools/hair.test.mjs && node tools/appearance-parity.test.mjs",
+    "test:appearance-server": "PYTHONDONTWRITEBYTECODE=1 server/.venv/bin/python tools/appearance-backend.test.py",
+    "test:studio": "node tools/studio.test.mjs && node tools/studio-light-controls.test.mjs && node tools/studio-lighting.test.mjs && node tools/studio-parity.test.mjs",
+    "test:studio-server": "PYTHONDONTWRITEBYTECODE=1 server/.venv/bin/python tools/studio-backend.test.py",
+    "test:snapshot": "node tools/snapshot-session.test.mjs && node tools/snapshot-overlay.test.mjs && node tools/snapshot-workspace.test.mjs && node tools/snapshot-camera-controls.test.mjs && node tools/tattoo-camera.test.mjs && node tools/tattoo-source.test.mjs",
+    "test:realism": "PYTHONDONTWRITEBYTECODE=1 server/.venv/bin/python tools/render-realism.test.py",
+    "test:inspector": "node tools/adjustment-control.test.mjs && node tools/inspector-tabs.test.mjs && node tools/viewport-controls.test.mjs && node tools/editor-history.test.mjs && node tools/editor-history-bindings.test.mjs && node tools/editor-undo-workspace.test.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.3.0",

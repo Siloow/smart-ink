@@ -1,12 +1,15 @@
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame, useLoader, useThree } from '@react-three/fiber';
-import { OBJLoader } from 'three-stdlib';
+import { BokehPass, EffectComposer, OBJLoader, RenderPass, ShaderPass } from 'three-stdlib';
 import * as THREE from 'three';
 import { SplitFigure } from './PipelineFigures';
+import { SURFACE_TATTOO_GLSL } from '../render/tattooLayer';
+import type { SurfaceAnchor } from '../render/surfacePlacement';
+import { createInitialHeroTattoo, heroAnchorFromHit } from './heroTattooPlacement';
 
 /**
  * Live version of the hero pipeline figure: the real forearm mesh, split down
- * the middle of the viewport — wireframe geometry on one side, lit skin with the
+ * a vertical divider — wireframe geometry on one side, lit skin with the
  * design on the other. Dragging turns the limb; holding ⌘ drags the design
  * itself over the surface, a taste of the placement step in the editor.
  *
@@ -33,59 +36,74 @@ const VIEW_CENTER_Y = -1.8;
 /** Half turn to choose between the palm and the back of the hand. */
 const HAND_FACE_TURN = 0;
 /**
- * A long lens flattens the limb into a column, so the camera comes in close on a
- * wider one: the shaft tapers away and the near surface reads as round.
+ * A wide lens close in, rather than a long one further back: the limb is pitched
+ * towards the camera below, and it is the perspective of a short lens that makes
+ * the hand loom and the forearm fall away behind it.
  */
-const CAMERA_FOV = 38;
-const CAMERA_DISTANCE = 5.15;
+const CAMERA_FOV = 46;
+const CAMERA_DISTANCE = 4.3;
+/**
+ * The camera sits slightly to the right and almost level with the wrist.
+ * This keeps the reaching fingertips readable without hiding the forearm.
+ * Radians round the limb's axis, and up from level.
+ */
+const CAMERA_AZIMUTH = 0.4;
+const CAMERA_ELEVATION = 0.1;
+/** Near and far planes kept tight round the limb, for a usable depth buffer. */
+const CAMERA_NEAR = 1;
+const CAMERA_FAR = 24;
+/** Frame above the wrist, leaving space below for the reaching fingers. */
+const LOOK_AT = new THREE.Vector3(0, 0.2, 0);
+/**
+ * Pitch of the limb about the wrist, towards the lens: the hand reaches out of
+ * the frame at the viewer while the forearm recedes into the focus falloff.
+ * Negative brings the hand end forward.
+ */
+const LIMB_PITCH = -0.85;
 /**
  * Lean of the limb across the frame. Upright, it sat parallel to the divider —
- * two vertical lines down the middle of the panel — so it now runs corner to
- * corner and crosses the divider instead.
+ * two vertical lines down the middle of the panel — so it runs a little off
+ * true and crosses the divider instead.
  */
-const LIMB_TILT = -0.2;
+const LIMB_TILT = -0.25;
 /**
- * The design is placed in cylindrical surface coordinates — an angle around the
- * limb and a height along it — rather than projected from a fixed direction, so
- * that it can be dragged to any point on the skin and stays there as the limb
- * turns, including round the far side.
+ * Depth of field. The aperture is in the bokeh shader's own units — a coefficient
+ * on the depth difference from the focus plane — and the blur is capped so the
+ * fingers nearest the lens soften rather than smear.
  */
+const DOF_APERTURE = 0.011;
+const DOF_MAX_BLUR = 0.014;
+/** Amplitude of the grain laid over the final frame, and how far the lens
+    spreads the colour channels at the corners. */
+const GRAIN = 0.045;
+const FRINGE = 0.03;
+/** Place the screen-space divider through the forearm, with more skin visible. */
+const SPLIT_POSITION = 0.575;
+/** Longest side in model units, using the same physical scale convention as the editor. */
 const DESIGN_EXTENT = 0.58;
-/** Radius of the limb once normalised, which sets the arc a square design spans. */
-const LIMB_RADIUS = TARGET_WIDTH / 2;
-const DESIGN_SIZE = new THREE.Vector2(DESIGN_EXTENT / LIMB_RADIUS, DESIGN_EXTENT);
-/** Angle 0 faces the camera at rest; the height is in mesh units. */
-const DESIGN_CENTER = new THREE.Vector2(0, 0.7);
-/**
- * Holds a dragged design to the forearm: below, it would run onto the wrist and
- * the hand, where a mapping built around the limb's axis has nothing sensible to
- * say about a flat palm.
- */
-const DESIGN_HEIGHT_MIN = 0.35;
-const DESIGN_HEIGHT_MAX = 1.15;
-/**
- * Hits below this are on the wrist or the hand. A drag ignores them, holding the
- * design at its last place on the forearm: the flat of the hand sits across the
- * limb's axis, so hits there swing the angle about wildly.
- */
-const FOREARM_BOTTOM_Y = 0.05;
+/** Keep the open elbow cutoff beyond the normal placement area. */
+const DESIGN_HEIGHT_MAX = 2.3;
+/** Fade after the highest tattoo edge, ending before the lowest open elbow edge
+ * (y = 2.927). Object-space height keeps the cutoff hidden at every rotation. */
+const REAR_FADE_START = DESIGN_HEIGHT_MAX + DESIGN_EXTENT / 2;
+const REAR_FADE_END = 2.9;
 /** Spacing of the mesh half's UV grid: rings along the limb, seams around it. */
 const RING_SPACING = 0.44;
 const SEAM_SPACING = Math.PI / 6;
 /**
- * Idle sweep, in radians either side of the rest pose. A sine rather than the
- * ramp it used to be, which reversed abruptly at each end and read as a
- * metronome; and centred a little off-axis, since dead-on is the dullest pose.
+ * A restrained idle sweep keeps the fingertips directed toward the viewer
+ * and the tattoo surface exposed. Manual rotation still covers a full turn.
  */
-const SWING = 0.3;
+const SWING = 0.16;
 /** Phase advance per second, for a sweep of about eleven seconds. */
 const SWING_SPEED = 0.55;
 /**
- * Rest pose. Turned a little towards the render side, so the design carries onto
- * the lit skin — the half worth looking at — rather than sitting square on the
- * divider or drifting round to the wireframe.
+ * Rest pose. The camera is round to the right, so the limb turns to meet it, and
+ * a little further so the design carries onto the lit skin — the half worth
+ * looking at — rather than sitting square on the divider or drifting round to
+ * the wireframe.
  */
-const SWING_CENTER = 0.16;
+const SWING_CENTER = CAMERA_AZIMUTH + 0.16;
 /** How much of a dragged pose is shed per second, easing back to the rest one. */
 const RETURN_RATE = 0.45;
 /** Radians of limb rotation per pixel dragged. */
@@ -305,12 +323,6 @@ function measureBands(geo: THREE.BufferGeometry, count: number): Band[] {
   return bands;
 }
 
-/** Folds an angle into (-PI, PI], matching the shader's wrap. */
-function wrapAngle(angle: number): number {
-  const turn = Math.PI * 2;
-  return angle - turn * Math.floor(angle / turn + 0.5);
-}
-
 function median(values: number[]): number {
   const sorted = [...values].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
@@ -343,6 +355,42 @@ function frameOnShaft(geo: THREE.BufferGeometry): void {
   geo.translate(0, -VIEW_CENTER_Y, 0);
 }
 
+/** Bend only the hand toward the lens; the tattoo-bearing shaft stays unchanged.
+ * Blend through the wrist so the gesture does not introduce a hard joint. */
+function poseHeroHand(geo: THREE.BufferGeometry): void {
+  const position = geo.attributes.position;
+  const normal = geo.attributes.normal;
+  const point = new THREE.Vector3();
+  const n = new THREE.Vector3();
+  const axis = new THREE.Vector3(1, 0, 0);
+  const pivot = new THREE.Vector3(0, 0, -0.3);
+  const bend = 0.65;
+  const blendLength = 0.7;
+  for (let i = 0; i < position.count; i++) {
+    point.fromBufferAttribute(position, i);
+    if (point.y >= 0) continue;
+    const t = THREE.MathUtils.clamp(-point.y / blendLength, 0, 1);
+    const angle = -bend * t * t * (3 - 2 * t);
+    point.sub(pivot);
+    if (normal) {
+      n.fromBufferAttribute(normal, i);
+      // Inverse-transpose of the blended bend, including its changing angle.
+      const derivative = t < 1 ? bend * 6 * t * (1 - t) / blendLength : 0;
+      const correction = derivative * (-point.z * n.y + point.y * n.z)
+        / (1 - derivative * point.z);
+      n.y -= correction;
+      n.applyAxisAngle(axis, angle).normalize();
+      normal.setXYZ(i, n.x, n.y, n.z);
+    }
+    point.applyAxisAngle(axis, angle).add(pivot);
+    position.setXYZ(i, point.x, point.y, point.z);
+  }
+  position.needsUpdate = true;
+  if (normal) normal.needsUpdate = true;
+  geo.computeBoundingBox();
+  geo.computeBoundingSphere();
+}
+
 /** Loads the forearm as a single geometry, normalised and centred for framing. */
 class ForearmGeometryLoader extends THREE.Loader<THREE.BufferGeometry> {
   load(
@@ -371,6 +419,7 @@ class ForearmGeometryLoader extends THREE.Loader<THREE.BufferGeometry> {
           standUpright(geo);
           faceHandForward(geo);
           frameOnShaft(geo);
+          poseHeroHand(geo);
           onLoad(geo);
         } catch (error) {
           onError?.(error);
@@ -383,11 +432,17 @@ class ForearmGeometryLoader extends THREE.Loader<THREE.BufferGeometry> {
 }
 
 const vertexShader = /* glsl */ `
+  attribute vec2 aTattooUv;
+  attribute float aTattooMask;
+  varying vec2 vTattooUv;
+  varying float vTattooMask;
   varying vec3 vObjPos;
   varying vec3 vWorldNormal;
   varying vec3 vViewDir;
 
   void main() {
+    vTattooUv = aTattooUv;
+    vTattooMask = aTattooMask;
     vObjPos = position;
     vWorldNormal = normalize(mat3(modelMatrix) * normal);
     vec4 worldPos = modelMatrix * vec4(position, 1.0);
@@ -397,10 +452,13 @@ const vertexShader = /* glsl */ `
 `;
 
 const fragmentShader = /* glsl */ `
+  ${SURFACE_TATTOO_GLSL}
+  varying vec2 vTattooUv;
+  varying float vTattooMask;
   uniform float uSplit;
+  uniform vec2 uRearFade;
   uniform sampler2D uDesign;
-  uniform vec2 uDesignCenter;
-  uniform vec2 uDesignSize;
+  uniform float uDesignExtent;
   uniform float uRingSpacing;
   uniform float uSeamSpacing;
   uniform vec3 uMeshFill;
@@ -420,17 +478,18 @@ const fragmentShader = /* glsl */ `
   varying vec3 vWorldNormal;
   varying vec3 vViewDir;
 
-  const float TAU = 6.283185307;
   /**
    * The render half shows the right of the limb, so the key is set just inside
    * it, high and a little to the right of the lens: brightest where the design
    * sits by the divider, then turning away to the far silhouette, where the rim
    * picks the arm back off the background. Any further round and the whole half
    * is lit evenly and the form goes flat; any further left and the lit area
-   * narrows to a slit against the divider.
+   * narrows to a slit against the divider. Both directions are swung round the
+   * limb with the camera (see CAMERA_AZIMUTH), so they keep that relation to
+   * the lens.
    */
-  const vec3 KEY_DIR = vec3(0.22, 0.52, 0.82);
-  const vec3 BOUNCE_DIR = vec3(0.9, -0.34, 0.26);
+  const vec3 KEY_DIR = vec3(0.64, 0.52, 0.55);
+  const vec3 BOUNCE_DIR = vec3(0.89, -0.34, -0.29);
 
   /** Screen-space-consistent line along multiples of "spacing". */
   float gridLine(float coord, float spacing, float widthPx) {
@@ -461,18 +520,14 @@ const fragmentShader = /* glsl */ `
     vec3 V = normalize(vViewDir);
     float facingCamera = max(dot(N, V), 0.0);
 
-    /* The design sits in the limb's own cylindrical coordinates: an angle
-       around it and a height along it. Every surface point maps to one place in
-       the design, so the ink is on the skin rather than projected through it. */
+    // Exactly the editor's surface chart, physical sizing and edge sampling.
+    vec4 tattoo = sampleSurfaceTattoo(
+      uDesign, vTattooUv, vTattooMask, uDesignExtent,
+      1.0, 0.0, uInk, 1.0
+    );
+    float ink = tattoo.a;
+    // Cylindrical coordinates are only the decorative wireframe grid now.
     float aroundLimb = atan(vObjPos.x, vObjPos.z);
-    float angleFromCenter = aroundLimb - uDesignCenter.x;
-    // Shortest way round, so the design may straddle the back of the limb.
-    angleFromCenter -= TAU * floor(angleFromCenter / TAU + 0.5);
-    vec2 duv = vec2(angleFromCenter, vObjPos.y - uDesignCenter.y) / uDesignSize + 0.5;
-    float inside =
-      step(0.0, duv.x) * step(duv.x, 1.0) *
-      step(0.0, duv.y) * step(duv.y, 1.0);
-    float ink = texture2D(uDesign, duv).a * inside;
 
     // — Mesh half: cylindrical UV grid over a flat fill.
     float rings = gridLine(vObjPos.y, uRingSpacing, 1.1);
@@ -507,11 +562,9 @@ const fragmentShader = /* glsl */ `
     skin *= mix(0.68, 1.0, smoothstep(0.0, 0.6, facingCamera));
 
     /* Ink lies under the skin, so it darkens the surface rather than covering
-       it, and the sheen added below still runs across the tattoo. The line work
-       is about a pixel wide here, so its coverage is firmed up first: against
-       the dark mesh half a half-covered pixel still reads, but a 40% darkening
-       of lit skin does not. */
-    skin *= mix(vec3(1.0), uInk, smoothstep(0.06, 0.6, ink));
+       it, and the sheen added below still runs across the tattoo. Coverage and
+       edge softness come from the same sampler as the editor. */
+    skin *= mix(vec3(1.0), tattoo.rgb, ink);
 
     float sheen = pow(max(dot(N, normalize(keyDir + V)), 0.0), 26.0);
     skin += uSheen * sheen * smoothstep(0.0, 0.3, key) * 0.26;
@@ -522,7 +575,12 @@ const fragmentShader = /* glsl */ `
     skin = film(skin);
 
     vec3 color = gl_FragCoord.x < uSplit ? meshColor : skin;
-    gl_FragColor = vec4(color, 1.0);
+    // Premultiplied coverage lets the open elbow fade into the real page.
+    // Quintic easing has no visible start/end band, even along the bright rim.
+    float fade = clamp((vObjPos.y - uRearFade.x) / (uRearFade.y - uRearFade.x), 0.0, 1.0);
+    fade = fade * fade * fade * (fade * (fade * 6.0 - 15.0) + 10.0);
+    float alpha = 1.0 - fade;
+    gl_FragColor = vec4(color * alpha, alpha);
   }
 `;
 
@@ -544,12 +602,33 @@ interface DesignDrag {
   hover: React.RefObject<THREE.Vector2>;
 }
 
-const Forearm: React.FC<{ spin: SpinState; drag: DesignDrag; onReady: () => void }> = ({
-  spin,
-  drag,
-  onReady,
-}) => {
-  const geometry = useLoader(ForearmGeometryLoader, MESH_URL);
+/**
+ * Where the camera rests, and the screen-right and screen-up directions there,
+ * along which the pointer parallax moves it.
+ */
+const CAMERA_HOME = (() => {
+  const position = new THREE.Vector3(
+    Math.sin(CAMERA_AZIMUTH) * Math.cos(CAMERA_ELEVATION),
+    Math.sin(CAMERA_ELEVATION),
+    Math.cos(CAMERA_AZIMUTH) * Math.cos(CAMERA_ELEVATION)
+  ).multiplyScalar(CAMERA_DISTANCE);
+  const forward = LOOK_AT.clone().sub(position).normalize();
+  const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
+  const up = new THREE.Vector3().crossVectors(right, forward).normalize();
+  return { position, right, up };
+})();
+
+const Forearm: React.FC<{
+  spin: SpinState;
+  drag: DesignDrag;
+  /** Written each frame with the design's place in the world, for the focus. */
+  focus: React.RefObject<THREE.Vector3>;
+  onReady: () => void;
+  onPlacementStatus: (message: string | null) => void;
+}> = ({ spin, drag, focus, onReady, onPlacementStatus }) => {
+  const sourceGeometry = useLoader(ForearmGeometryLoader, MESH_URL);
+  const surface = useMemo(() => createInitialHeroTattoo(sourceGeometry), [sourceGeometry]);
+  const geometry = surface.geometry;
   const groupRef = useRef<THREE.Group>(null);
   const meshRef = useRef<THREE.Mesh>(null);
   const { camera, gl, size, viewport, invalidate } = useThree();
@@ -563,9 +642,9 @@ const Forearm: React.FC<{ spin: SpinState; drag: DesignDrag; onReady: () => void
         fragmentShader,
         uniforms: {
           uSplit: { value: 0 },
+          uRearFade: { value: new THREE.Vector2(REAR_FADE_START, REAR_FADE_END) },
           uDesign: { value: design },
-          uDesignCenter: { value: DESIGN_CENTER.clone() },
-          uDesignSize: { value: DESIGN_SIZE.clone() },
+          uDesignExtent: { value: DESIGN_EXTENT },
           uRingSpacing: { value: RING_SPACING },
           uSeamSpacing: { value: SEAM_SPACING },
           uMeshFill: { value: COLORS.meshFill },
@@ -589,31 +668,37 @@ const Forearm: React.FC<{ spin: SpinState; drag: DesignDrag; onReady: () => void
     onReady();
   }, [onReady]);
 
-  /* The geometry is owned by useLoader's cache, so only the locally created
-     material and texture are disposed here. */
+  /* Aimed once here, since the per-frame aim below is skipped under reduced
+     motion, and the canvas only places the camera. */
+  useEffect(() => {
+    camera.lookAt(LOOK_AT);
+    camera.updateMatrixWorld();
+    invalidate();
+  }, [camera, invalidate]);
+
+  /* The surface owns its clone. Leave useLoader's cached source untouched. */
   useEffect(
     () => () => {
       material.dispose();
       design.dispose();
+      surface.dispose();
     },
-    [material, design]
+    [material, design, surface]
   );
 
-  /* The split is a vertical line down the middle of the drawing buffer.
+  /* Match the divider position in the annotation layer to the drawing buffer.
      Explicitly request a frame, since the loop is on demand when idle. */
   useEffect(() => {
-    material.uniforms.uSplit.value = (size.width * viewport.dpr) / 2;
+    material.uniforms.uSplit.value = size.width * viewport.dpr * SPLIT_POSITION;
     invalidate();
   }, [material, size.width, viewport.dpr, invalidate]);
 
   const raycaster = useRef(new THREE.Raycaster());
   const ndc = useRef(new THREE.Vector2());
-  /** Surface-space vector from the point being held to the design's centre. */
-  const grabOffset = useRef<THREE.Vector2 | null>(null);
-
-  /** Where the pointer meets the skin, as (angle around the limb, height). */
+  const cameraTarget = useRef(new THREE.Vector3());
+  /** Pick the real triangle and barycentric point, just as the editor does. */
   const surfaceUnderPointer = useCallback(
-    (clientX: number, clientY: number): THREE.Vector2 | null => {
+    (clientX: number, clientY: number): SurfaceAnchor | null => {
       const mesh = meshRef.current;
       if (!mesh) return null;
 
@@ -629,13 +714,17 @@ const Forearm: React.FC<{ spin: SpinState; drag: DesignDrag; onReady: () => void
       if (!hit) return null;
 
       const local = mesh.worldToLocal(hit.point.clone());
-      return new THREE.Vector2(Math.atan2(local.x, local.z), local.y);
+      if (local.y > REAR_FADE_START) return null;
+      return heroAnchorFromHit(hit);
     },
     [camera, gl]
   );
 
   useFrame((_, delta) => {
-    if (spin.autoSwing && !spin.interacting.current) {
+    // At most one chart solve per new pointer position, never once per idle frame.
+    const pending = drag.pointer.current;
+    drag.pointer.current = null;
+    if (spin.autoSwing && !spin.interacting.current && !pending) {
       spin.phase.current += delta * SWING_SPEED;
       /* Shed the dragged pose gradually, so the limb drifts back to the one the
          panel was framed around instead of staying where it was left. */
@@ -649,53 +738,189 @@ const Forearm: React.FC<{ spin: SpinState; drag: DesignDrag; onReady: () => void
 
     /* Drift the camera with the pointer: a few millimetres of travel is enough
        to part the limb from the background and give the panel some depth. */
-    if (spin.autoSwing) {
+    if (spin.autoSwing && !spin.interacting.current && !pending) {
       const hover = drag.hover.current;
       const follow = 1 - Math.exp(-delta * PARALLAX_EASE);
-      camera.position.x += (hover.x * PARALLAX - camera.position.x) * follow;
-      camera.position.y += (-hover.y * PARALLAX * 0.6 - camera.position.y) * follow;
-      camera.lookAt(0, 0, 0);
+      const target = cameraTarget.current
+        .copy(CAMERA_HOME.position)
+        .addScaledVector(CAMERA_HOME.right, hover.x * PARALLAX)
+        .addScaledVector(CAMERA_HOME.up, -hover.y * PARALLAX * 0.6);
+      camera.position.lerp(target, follow);
+      camera.lookAt(LOOK_AT);
       camera.updateMatrixWorld();
     }
 
-    const pointer = drag.pointer.current;
-    if (!pointer) {
-      grabOffset.current = null;
-      return;
+    const mesh = meshRef.current;
+    if (!mesh) return;
+    mesh.updateWorldMatrix(true, false);
+    if (pending) {
+      const anchor = surfaceUnderPointer(pending.x, pending.y);
+      if (anchor) {
+        const placed = surface.place(anchor, mesh.matrixWorld);
+        onPlacementStatus(!placed
+          ? 'Too folded here — try a flatter spot'
+          : surface.chart && surface.chart.maxSize < DESIGN_EXTENT
+            ? 'Edges may clip here — try a broader area'
+            : null);
+      }
     }
-    /* Hit-test against the orientation just set above, not last frame's. */
-    group?.updateMatrixWorld(true);
-    const surface = surfaceUnderPointer(pointer.x, pointer.y);
-    if (!surface || surface.y < FOREARM_BOTTOM_Y) return;
-
-    const center = material.uniforms.uDesignCenter.value as THREE.Vector2;
-    if (!grabOffset.current) {
-      const offset = new THREE.Vector2(wrapAngle(center.x - surface.x), center.y - surface.y);
-      /* Taking hold of the design carries it by the point held; taking hold of
-         bare skin brings it under the cursor instead. */
-      const onDesign =
-        Math.abs(offset.x) <= DESIGN_SIZE.x / 2 && Math.abs(offset.y) <= DESIGN_SIZE.y / 2;
-      grabOffset.current = onDesign ? offset : new THREE.Vector2(0, 0);
-    }
-    center.set(
-      wrapAngle(surface.x + grabOffset.current.x),
-      THREE.MathUtils.clamp(
-        surface.y + grabOffset.current.y,
-        DESIGN_HEIGHT_MIN,
-        DESIGN_HEIGHT_MAX
-      )
-    );
+    // Focus tracks the actual anchored skin point, including hand placements.
+    focus.current.copy(surface.center).applyMatrix4(mesh.matrixWorld);
   });
 
-  /* Two groups so the sweep turns the limb about its own axis and the lean is
-     applied to the result; as one Euler the lean would make the sweep wobble. */
+  /* Nested groups so the sweep turns the limb about its own axis and the lean
+     and pitch are applied to the result; as one Euler they would make the
+     sweep wobble. */
   return (
-    <group rotation-z={LIMB_TILT}>
-      <group ref={groupRef}>
-        <mesh ref={meshRef} geometry={geometry} material={material} />
+    <group rotation-x={LIMB_PITCH}>
+      <group rotation-z={LIMB_TILT}>
+        <group ref={groupRef}>
+          <mesh ref={meshRef} geometry={geometry} material={material} />
+        </group>
       </group>
     </group>
   );
+};
+
+/**
+ * The look of a lens on the final frame: a touch of colour fringing that grows
+ * towards the corners, a gentle contrast curve, a vignette, and grain that
+ * changes every frame. Runs after the depth of field, so the grain sits on top
+ * of the blur as it would on film rather than being smeared by it.
+ */
+const gradeShader = {
+  uniforms: {
+    tDiffuse: { value: null as THREE.Texture | null },
+    uTime: { value: 0 },
+    uGrain: { value: GRAIN },
+    uFringe: { value: FRINGE },
+  },
+  vertexShader: /* glsl */ `
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: /* glsl */ `
+    uniform sampler2D tDiffuse;
+    uniform float uTime;
+    uniform float uGrain;
+    uniform float uFringe;
+    varying vec2 vUv;
+
+    float hash(vec2 p) {
+      return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+    }
+
+    void main() {
+      vec2 fromCenter = vUv - 0.5;
+      float r2 = dot(fromCenter, fromCenter);
+
+      /* Lateral chromatic aberration: nothing at the centre, growing with the
+         square of the distance out, as it does in glass. */
+      vec2 shift = fromCenter * r2 * uFringe;
+      vec4 center = texture2D(tDiffuse, vUv);
+      if (center.a < 0.0001) {
+        gl_FragColor = vec4(0.0);
+        return;
+      }
+      vec4 redSample = texture2D(tDiffuse, vUv - shift);
+      vec4 blueSample = texture2D(tDiffuse, vUv + shift);
+      // Blur averages premultiplied coverage. Grade straight colour, then
+      // premultiply again for the canvas, keeping its empty pixels transparent.
+      vec3 color = vec3(
+        redSample.r / max(redSample.a, 0.0001),
+        center.g / center.a,
+        blueSample.b / max(blueSample.a, 0.0001)
+      );
+
+      // A soft S-curve: deeper shadows, highlights held back from clipping.
+      color = mix(color, color * color * (3.0 - 2.0 * color), 0.35);
+
+      float vignette = 1.0 - smoothstep(0.25, 0.95, sqrt(r2) * 1.4);
+      color *= mix(0.55, 1.0, vignette);
+
+      /* Grain, heavier in the shadows where film shows it most; the time is
+         folded into the hash so it crawls rather than sitting still. */
+      float grain = hash(floor(gl_FragCoord.xy) + fract(uTime * 0.37) * 331.0) - 0.5;
+      float luma = dot(color, vec3(0.299, 0.587, 0.114));
+      color += grain * uGrain * mix(1.0, 0.4, smoothstep(0.1, 0.7, luma));
+
+      gl_FragColor = vec4(clamp(color, 0.0, 1.0) * center.a, center.a);
+    }
+  `,
+};
+
+/**
+ * Takes over rendering from the canvas with a depth of field pass and the lens
+ * grade above. The focus plane is set each frame at the design, so the design
+ * is what stays sharp while the hand reaching out of the frame and the forearm
+ * receding behind it soften off.
+ */
+const Cinematic: React.FC<{ focus: React.RefObject<THREE.Vector3> }> = ({ focus }) => {
+  const { gl, scene, camera, size, viewport } = useThree();
+
+  const passes = useMemo(() => {
+    const composer = new EffectComposer(gl);
+    const bokeh = new BokehPass(scene, camera as THREE.PerspectiveCamera, {
+      focus: CAMERA_DISTANCE,
+      aperture: DOF_APERTURE,
+      maxblur: DOF_MAX_BLUR,
+    });
+    /* The bokeh pass is written to be the last in a chain and leaves its output
+       in the write buffer; swapping lets the grade read it. */
+    bokeh.needsSwap = true;
+    // The bundled BokehShader averages RGBA, then forces alpha to 1. Keep its
+    // averaged coverage so softened edges reveal the page without a dark halo.
+    bokeh.materialBokeh.fragmentShader = bokeh.materialBokeh.fragmentShader.replace(
+      /gl_FragColor\.a\s*=\s*1\.0\s*;/,
+      ''
+    );
+    const grade = new ShaderPass(gradeShader);
+    composer.addPass(new RenderPass(scene, camera));
+    composer.addPass(bokeh);
+    composer.addPass(grade);
+    return { composer, bokeh, grade };
+  }, [gl, scene, camera]);
+
+  useEffect(() => {
+    const background = scene.background;
+    const clearColor = gl.getClearColor(new THREE.Color());
+    const clearAlpha = gl.getClearAlpha();
+    scene.background = null;
+    gl.setClearColor(0x000000, 0);
+    return () => {
+      scene.background = background;
+      gl.setClearColor(clearColor, clearAlpha);
+    };
+  }, [gl, scene]);
+
+  useEffect(() => {
+    passes.composer.setPixelRatio(viewport.dpr);
+    passes.composer.setSize(size.width, size.height);
+    passes.bokeh.uniforms.aspect.value = size.width / size.height;
+  }, [passes, size.width, size.height, viewport.dpr]);
+
+  useEffect(
+    () => () => {
+      passes.grade.dispose();
+      passes.bokeh.renderTargetDepth.dispose();
+      passes.bokeh.materialDepth.dispose();
+      passes.bokeh.materialBokeh.dispose();
+      passes.composer.dispose();
+    },
+    [passes]
+  );
+
+  /* Priority 1 replaces the canvas's own render, on demand or otherwise. */
+  useFrame(({ clock }) => {
+    passes.bokeh.uniforms.focus.value = camera.position.distanceTo(focus.current);
+    passes.grade.uniforms.uTime.value = clock.elapsedTime;
+    passes.composer.render();
+  }, 1);
+
+  return null;
 };
 
 class PreviewBoundary extends React.Component<
@@ -733,11 +958,14 @@ export const HeroPreview: React.FC = () => {
   const offset = useRef(0);
   const interacting = useRef(false);
   const lastX = useRef(0);
+  const press = useRef<{ id: number; x: number; y: number; moved: boolean } | null>(null);
   const pointer = useRef<{ x: number; y: number } | null>(null);
   const hover = useRef(new THREE.Vector2());
+  const focus = useRef(LOOK_AT.clone());
   const [autoSwing, setAutoSwing] = useState(true);
   const [dragMode, setDragMode] = useState<'rotate' | 'design' | null>(null);
   const [modifierHeld, setModifierHeld] = useState(false);
+  const [placementStatus, setPlacementStatus] = useState<string | null>(null);
   const spin: SpinState = { phase, offset, interacting, autoSwing };
   const drag: DesignDrag = { pointer, hover };
   const handleReady = useCallback(() => setReady(true), []);
@@ -779,6 +1007,8 @@ export const HeroPreview: React.FC = () => {
   }, []);
 
   const startDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0 || !e.isPrimary) return;
+    press.current = { id: e.pointerId, x: e.clientX, y: e.clientY, moved: false };
     interacting.current = true;
     if (movesDesign(e)) {
       /* Without this the modified drag is taken as a text selection. */
@@ -806,6 +1036,9 @@ export const HeroPreview: React.FC = () => {
     if (!dragMode) return;
 
     const onMove = (e: PointerEvent) => {
+      const start = press.current;
+      if (!start || e.pointerId !== start.id) return;
+      start.moved ||= Math.hypot(e.clientX - start.x, e.clientY - start.y) > 5;
       if (dragMode === 'design') {
         pointer.current = { x: e.clientX, y: e.clientY };
         return;
@@ -813,9 +1046,18 @@ export const HeroPreview: React.FC = () => {
       offset.current += (e.clientX - lastX.current) * DRAG_SENSITIVITY;
       lastX.current = e.clientX;
     };
-    const onEnd = () => {
+    const onEnd = (e: Event) => {
+      const start = press.current;
+      if (e instanceof PointerEvent && start && e.pointerId !== start.id) return;
+      if (e.type === 'pointerup' && e instanceof PointerEvent && start &&
+          (dragMode === 'design' || !start.moved)) {
+        // Keep the last position queued until the render loop applies it.
+        pointer.current = { x: e.clientX, y: e.clientY };
+      } else {
+        pointer.current = null;
+      }
+      press.current = null;
       interacting.current = false;
-      pointer.current = null;
       setDragMode(null);
     };
 
@@ -846,6 +1088,7 @@ export const HeroPreview: React.FC = () => {
       ]
         .filter(Boolean)
         .join(' ')}
+      style={{ '--hero-split': `${SPLIT_POSITION * 100}%` } as React.CSSProperties}
       ref={wrapperRef}
       onPointerDown={showFallback ? undefined : startDrag}
       onPointerMove={showFallback ? undefined : trackHover}
@@ -861,14 +1104,20 @@ export const HeroPreview: React.FC = () => {
         <PreviewBoundary onFail={handleFail}>
           <Canvas
             className="hero-preview-canvas"
-            camera={{ position: [0, 0, CAMERA_DISTANCE], fov: CAMERA_FOV }}
+            camera={{
+              position: CAMERA_HOME.position.toArray(),
+              fov: CAMERA_FOV,
+              near: CAMERA_NEAR,
+              far: CAMERA_FAR,
+            }}
             dpr={[1, 2]}
             frameloop={visible ? (autoSwing || dragMode ? 'always' : 'demand') : 'never'}
             gl={{ antialias: true, alpha: true }}
             style={{ opacity: ready ? 1 : 0 }}
           >
             <Suspense fallback={null}>
-              <Forearm spin={spin} drag={drag} onReady={handleReady} />
+              <Forearm spin={spin} drag={drag} focus={focus} onReady={handleReady} onPlacementStatus={setPlacementStatus} />
+              <Cinematic focus={focus} />
             </Suspense>
           </Canvas>
         </PreviewBoundary>
@@ -876,12 +1125,11 @@ export const HeroPreview: React.FC = () => {
 
       {!showFallback && (
         <>
-          <span className="hero-preview-defocus" aria-hidden />
           <span className="hero-preview-divider" aria-hidden />
           <span className="hero-preview-label hero-preview-label--mesh">mesh</span>
           <span className="hero-preview-label hero-preview-label--render">render</span>
           <span className="hero-preview-hint">
-            {designMode ? 'drag to move the design' : 'drag to rotate · ⌘ drag to move'}
+            {placementStatus || (designMode ? 'drag to move the design' : 'click to place · drag to rotate · ⌘/Ctrl move')}
           </span>
         </>
       )}

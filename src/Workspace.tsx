@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, Suspense } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo, useSyncExternalStore, Suspense } from 'react'
 import type { CSSProperties } from 'react'
 import { Canvas, useThree } from '@react-three/fiber'
 import ErrorBoundary from './ErrorBoundary'
@@ -8,17 +8,34 @@ import OrbitControlsWithCmdLock, { type OrbitControlsHandle } from './OrbitContr
 import ModelWithUVTattoo, { type ModelWithUVTattooHandle } from './ModelWithUVTattoo'
 import CinematicLights from './CinematicLights'
 import LightHandles from './LightHandles'
-import TopMenuBar from './TopMenuBar'
+import StudioBackdrop from './StudioBackdrop'
+import { DEFAULT_STUDIO, normalizeStudio, studioForExport, type StudioSettings } from './render/studioSettings'
+import TopMenuBar, { type InspectorTab } from './TopMenuBar'
+import EditorOutputMenu from './EditorOutputMenu'
+import ViewportControls from './ViewportControls'
+import { FaUndo, FaRedo } from 'react-icons/fa'
+import { useEditorHistory } from './hooks/useEditorHistory'
+import { bindEditorHistory } from './services/editorHistoryBindings'
+import SnapshotOverlay from './SnapshotOverlay'
+import SnapshotCameraControls from './SnapshotCameraControls'
+import LightingControls from './LightingControls'
+import { DEFAULT_TATTOO_CAMERA_ADJUSTMENT, frameTattoo, regionSnapshotFraming, type TattooFraming, type TattooCameraAdjustment } from './render/tattooCamera'
+import { resolveTattooSource } from './render/tattooSource'
+import { createSnapshotSession } from './services/snapshotSession'
+import { snapshotOutput, type SnapshotQuality } from './render/snapshot'
 import ScenesDashboard from './ScenesDashboard'
 import EditorLeftPanel from './EditorLeftPanel'
 import type { SceneData } from './types'
 import { updateScene } from './sceneStorage'
-import { downloadFiles } from './utils/sceneExporter'
+import { downloadFiles, downloadBlob } from './utils/sceneExporter'
+import { BACKGROUNDS, EXPORT_PRESETS, exportDimensions, paintExportBackground, withoutEditorHelpers, canvasPng, blankInkLayer, frameRegionCamera, type BackgroundId, type ExportPreset } from './render/exportPresentation'
+import { createSceneSaveQueue } from './storage/sceneSaveQueue'
 import { LIGHTING_PRESETS, resolveRig, type LightingPresetKey, type LightDefinition } from './config/lightingPresets'
 import {
   renderContract,
   syncToLiveWatcher,
-  checkRenderServer,
+  getRenderServerStatus,
+  type RenderServerStatus,
   getRenderTargetLabel,
   type RenderStatus,
 } from './services/cloudRenderService'
@@ -30,22 +47,18 @@ import { migrateScene } from './sceneStorage'
 import { addRenderHistory } from './renderHistoryStorage'
 import RenderHistoryModal from './RenderHistoryModal'
 import { captureThumbnail } from './storage/dataUrl'
-import { DEFAULT_BODY_SHAPE, normalizeShape, type BodyShapeKey, type BodyShape } from './render/bodyShape'
+import { DEFAULT_BODY_POSE, normalizePose, poseFromPreset, BODY_POSE_PRESETS, type BodyPose } from './render/bodyPose'
+import { levelFocusDirection } from './render/focusCamera'
+import { DEFAULT_BODY_APPEARANCE, normalizeAppearance, type BodyAppearance } from './render/bodyAppearance'
+import { DEFAULT_BODY_SHAPE, normalizeShape, clampShapeValue, type BodyShapeKey, type BodyShape } from './render/bodyShape'
 import { regionLabel, type BodyRegionId } from './render/bodyRegions'
 import RadialShapeMenu from './RadialShapeMenu'
 import type { RegionFraming } from './ModelWithUVTattoo'
+import type { SurfaceAnchor } from './render/surfacePlacement'
 import * as THREE from 'three'
 import type { BetaSession } from './auth/types'
 
-const BG_PRESETS = {
-  white: { background: '#fff' },
-  dark: { background: '#181818' },
-  gray: { background: 'linear-gradient(135deg, #444 0%, #888 100%)' },
-  bluepurple: { background: 'linear-gradient(135deg, #3a1c71 0%, #d76d77 50%, #ffaf7b 100%)' },
-  peach: { background: 'linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%)' },
-};
-
-type BgKey = keyof typeof BG_PRESETS;
+type BgKey = BackgroundId;
 
 // Camera presets for different viewing angles
 type CameraPresetKey = 'front' | 'back' | 'left' | 'right' | 'top' | 'bottom' | 'threeQuarter' | 'profile' | 'closeup' | 'wide';
@@ -62,17 +75,9 @@ const CAMERA_PRESETS: Record<CameraPresetKey, { position: [number, number, numbe
   closeup: { position: [0, 0, 4], target: [0, 0, 0], fov: 60, name: 'Close Up' },
   wide: { position: [0, 0, 12], target: [0, 0, 0], fov: 35, name: 'Wide Shot' },
 };
-
-// Export presets for different platforms
-const EXPORT_PRESETS = {
-  instagram: { width: 1080, height: 1080, name: 'Instagram Square' },
-  instagramStory: { width: 1080, height: 1920, name: 'Instagram Story' },
-  instagramPortrait: { width: 1080, height: 1350, name: 'Instagram Portrait' },
-  twitter: { width: 1200, height: 675, name: 'Twitter/X Post' },
-  facebook: { width: 1200, height: 630, name: 'Facebook Post' },
-  portfolio: { width: 1920, height: 1080, name: 'Portfolio HD' },
-  print: { width: 3000, height: 2000, name: 'Print Quality' },
-};
+// OrbitControls owns camera changes; a changing Canvas camera prop would snap
+// to the destination before the view transition can read its starting point.
+const INITIAL_CANVAS_CAMERA = { position: [6, 4, 6] as [number, number, number], fov: 45 };
 
 // Component to access Three.js renderer and scene
 function ExportRenderer({ onRendererReady }: { onRendererReady: (renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera) => void }) {
@@ -127,8 +132,43 @@ function sampleTrackStyle(samples: number): CSSProperties {
 
 export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps) {
   const [currentScene, setCurrentScene] = useState<SceneData | null>(null)
+  const [inspectorTab, setInspectorTab] = useState<InspectorTab>('tattoo')
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [showDashboard, setShowDashboard] = useState(true)
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
+  const [sceneSaves] = useState(() => createSceneSaveQueue<SceneData>(updateScene))
+  const [saveState, setSaveState] = useState(() => sceneSaves.getState())
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const navigating = useRef(false)
+  useEffect(() => sceneSaves.subscribe(() => setSaveState(sceneSaves.getState())), [sceneSaves])
+  const stageScene = useCallback((updated: SceneData) => {
+    const snapshot = { ...updated, updatedAt: new Date() }
+    setCurrentScene((prev) => prev?.id === snapshot.id ? snapshot : prev)
+    sceneSaves.stage(snapshot)
+  }, [sceneSaves])
+  const flushPendingSave = useCallback(() => {
+    if (saveTimer.current !== null) clearTimeout(saveTimer.current)
+    saveTimer.current = null
+    return sceneSaves.flush()
+  }, [sceneSaves])
+  const afterSaving = useCallback((action: () => void) => {
+    if (navigating.current) return
+    navigating.current = true
+    void (async () => {
+      do { await flushPendingSave() } while (sceneSaves.hasPending())
+      action()
+    })().catch(() => {}).finally(() => { navigating.current = false })
+  }, [flushPendingSave, sceneSaves])
+  useEffect(() => {
+    const warnUnsaved = (event: BeforeUnloadEvent) => {
+      if (sceneSaves.hasPending()) { event.preventDefault(); event.returnValue = '' }
+    }
+    window.addEventListener('beforeunload', warnUnsaved)
+    return () => {
+      window.removeEventListener('beforeunload', warnUnsaved)
+      void flushPendingSave().catch(() => {})
+    }
+  }, [flushPendingSave, sceneSaves])
 
   // Editor state (mirrors SceneData)
   const [uploadedImage, setUploadedImage] = useState<string | null>(null)
@@ -137,28 +177,55 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
   const [decalColor, setDecalColor] = useState('#ffffff') // Default white (no tint)
   const [decalOpacity, setDecalOpacity] = useState(1) // Default full opacity
   const [decalVisible, setDecalVisible] = useState(false)
+  const [surfacePlacement, setSurfacePlacement] = useState<SurfaceAnchor | null>(null)
+  const [placementStatus, setPlacementStatus] = useState('Click the skin to place. Drag to orbit. Hold ⌘ / Ctrl and drag to move the tattoo.')
   const [photoMode, setPhotoMode] = useState(false)
   const [background, setBackground] = useState<BgKey>('white')
+  const [studio, setStudio] = useState<StudioSettings>(() => ({ ...DEFAULT_STUDIO }))
   const [lightingPreset, setLightingPreset] = useState<LightingPresetKey>('studio')
   const [lights, setLights] = useState<LightDefinition[]>(() => resolveRig('studio'))
   const [selectedLight, setSelectedLight] = useState<number | null>(null)
-  const [cameraPreset, setCameraPreset] = useState<CameraPresetKey>('threeQuarter')
+  const [cameraPreset, setCameraPreset] = useState<CameraPresetKey | 'custom'>('threeQuarter')
   const [decalPosition, setDecalPosition] = useState<[number, number, number] | null>(null)
   const [decalNormal, setDecalNormal] = useState<[number, number, number] | null>(null)
   const [cameraState, setCameraState] = useState<{ position: [number, number, number], target: [number, number, number], fov: number }>(CAMERA_PRESETS.threeQuarter)
+  const [cameraRequestId, setCameraRequestId] = useState(0)
+  const [showPlacementTips, setShowPlacementTips] = useState(() => {
+    try { return localStorage.getItem('smartink:placement-tips') !== 'hidden' }
+    catch { return true }
+  })
+  const togglePlacementTips = (visible: boolean) => {
+    setShowPlacementTips(visible)
+    try { localStorage.setItem('smartink:placement-tips', visible ? 'shown' : 'hidden') }
+    catch { /* The toggle still works when browser storage is unavailable. */ }
+  }
   const [performanceMode, setPerformanceMode] = useState(false)
   const [modelLoading, setModelLoading] = useState(false)
   /** False until the viewport container has a real size; see the effect below. */
   const [canvasHostSized, setCanvasHostSized] = useState(false)
+  const [viewportAspect, setViewportAspect] = useState(1)
   const [bodyMeshId, setBodyMeshId] = useState('body_full')
   const [skinToneId, setSkinToneId] = useState('tone_03')
   const [poseId, setPoseId] = useState('neutral')
+  const [bodyPose, setBodyPose] = useState<BodyPose>(() => ({ ...DEFAULT_BODY_POSE }))
+  const [bodyAppearance, setBodyAppearance] = useState<BodyAppearance>(() => ({ ...DEFAULT_BODY_APPEARANCE }))
+  const handlePosePreset = useCallback((id: string) => {
+    setPoseId(id)
+    setBodyPose(poseFromPreset(id))
+  }, [])
+  const handleBodyPoseChange = useCallback((pose: BodyPose) => {
+    const next = normalizePose(pose)
+    setBodyPose(next)
+    const preset = BODY_POSE_PRESETS.find((p) => {
+      const target = poseFromPreset(p.id)
+      return Object.keys(next).every((key) => Math.abs(next[key as keyof BodyPose] - target[key as keyof BodyPose]) < 0.001)
+    })
+    setPoseId(preset?.id ?? 'custom')
+  }, [])
   const [bodyShape, setBodyShape] = useState<BodyShape>(() => ({ ...DEFAULT_BODY_SHAPE }))
   /** Body part cut out of the viewport, or null for the whole figure. */
   const [isolateRegion, setIsolateRegion] = useState<BodyRegionId | null>(null)
-  /** Region under the pointer in the viewport. */
-  const [hoverRegion, setHoverRegion] = useState<BodyRegionId | null>(null)
-  /** Regions a hovered inspector control refers to; wins over the pointer. */
+  /** Regions affected by the active inspector control. */
   const [panelRegions, setPanelRegions] = useState<BodyRegionId[]>([])
   const [shapeMenu, setShapeMenu] = useState<{
     region: BodyRegionId
@@ -167,15 +234,11 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
     pointerId: number
   } | null>(null)
 
-  // An inspector control being hovered says exactly which parts it moves, so
-  // it wins over whatever the pointer happens to be over in the viewport.
+  // Highlight only when a shape control explains what it affects. Passive
+  // mesh hover should preserve the skin and tattoo appearance.
   const highlightRegions: BodyRegionId[] = shapeMenu
     ? [shapeMenu.region]
-    : panelRegions.length > 0
-      ? panelRegions
-      : hoverRegion
-        ? [hoverRegion]
-        : []
+    : panelRegions
 
   const handleRegionPress = useCallback(
     (region: BodyRegionId, x: number, y: number, pointerId: number) => {
@@ -185,28 +248,21 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
   )
 
   const handleShapeValueChange = useCallback((key: BodyShapeKey, value: number) => {
-    setBodyShape((prev) => ({ ...prev, [key]: value }))
+    setBodyShape((prev) => ({ ...prev, [key]: clampShapeValue(key, value) }))
   }, [])
 
-  /** Pull the camera back just far enough to hold a newly cut-out region. */
   const handleFrameRegion = useCallback((framing: RegionFraming | null) => {
     if (!framing) return
-    const [cx, cy, cz] = framing.center
+    const rect = canvasHostRef.current?.getBoundingClientRect()
+    const aspect = rect && rect.height > 0 ? rect.width / rect.height : 1
+    const actual = orbitControlsRef.current?.getSnapshot()
     setCameraState((prev) => {
-      const dir = new THREE.Vector3(
-        prev.position[0] - prev.target[0],
-        prev.position[1] - prev.target[1],
-        prev.position[2] - prev.target[2]
-      )
-      if (dir.lengthSq() < 1e-6) dir.set(0, 0, 1)
-      dir.normalize()
-      const dist = (framing.radius / Math.sin((prev.fov * Math.PI) / 360)) * 1.15
-      return {
-        position: [cx + dir.x * dist, cy + dir.y * dist, cz + dir.z * dist],
-        target: [cx, cy, cz],
-        fov: prev.fov,
-      }
+      const from = actual ?? prev
+      const direction = from.position.map((n, i) => n - from.target[i]) as [number, number, number]
+      return frameRegionCamera(framing, levelFocusDirection(direction), 45, aspect)
     })
+    setCameraRequestId((id) => id + 1)
+    setCameraPreset('custom')
   }, [])
   const [lookId, setLookId] = useState('studio_softbox')
   const [qualityTier, setQualityTier] = useState<'preview' | 'final'>('preview')
@@ -217,7 +273,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
   // Export state
   const [showExportModal, setShowExportModal] = useState(false)
   const [showRenderHistory, setShowRenderHistory] = useState(false)
-  const [exportPreset, setExportPreset] = useState('instagram')
+  const [exportPreset, setExportPreset] = useState<ExportPreset>('instagram')
   const [watermarkText, setWatermarkText] = useState('SMART INK')
   const [watermarkEnabled, setWatermarkEnabled] = useState(true)
   const [isExporting, setIsExporting] = useState(false)
@@ -228,7 +284,58 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
   const [cloudRenderStatus, setCloudRenderStatus] = useState<RenderStatus>('idle')
   const [cloudRenderMessage, setCloudRenderMessage] = useState('')
   const [cloudRenderImage, setCloudRenderImage] = useState<string | null>(null)
-  const [renderServerOnline, setRenderServerOnline] = useState<boolean | null>(null)
+  const [renderServer, setRenderServer] = useState<RenderServerStatus | null>(null)
+  const renderServerOnline = renderServer?.online ?? null
+  const [exportError, setExportError] = useState('')
+  const [historyWarning, setHistoryWarning] = useState('')
+  const [renderElapsed, setRenderElapsed] = useState(0)
+  const renderController = useRef<AbortController | null>(null)
+  const [snapshotSession] = useState(() => createSnapshotSession({
+    render: renderContract,
+    retain: async (shot, imageUrl) => {
+      const image = await fetch(imageUrl).then((response) => response.blob())
+      await addRenderHistory({ source: 'cycles', width: shot.contract.output.width,
+        height: shot.contract.output.height, qualityTier: shot.contract.output.qualityTier,
+        lookId: shot.contract.lookId, sceneName: shot.sceneName }, image)
+    },
+  }))
+  const snapshot = useSyncExternalStore(snapshotSession.subscribe, snapshotSession.getState)
+  const [snapshotElapsed, setSnapshotElapsed] = useState(0)
+  const [tattooFraming, setTattooFraming] = useState<TattooFraming | null>(null)
+  const [snapshotHasTattoo, setSnapshotHasTattoo] = useState(false)
+  const [snapshotFramingHint, setSnapshotFramingHint] = useState('')
+  const [snapshotCamera, setSnapshotCamera] = useState<TattooCameraAdjustment>(() => ({ ...DEFAULT_TATTOO_CAMERA_ADJUSTMENT }))
+  const snapshotReturnCamera = useRef<{ position: [number, number, number]; target: [number, number, number]; fov: number } | null>(null)
+  const closeSnapshot = useCallback(() => {
+    const restore = snapshotReturnCamera.current
+    snapshotReturnCamera.current = null
+    snapshotSession.close()
+    if (restore) {
+      setCameraState(restore)
+      setCameraRequestId((value) => value + 1)
+      setCameraPreset('custom')
+    }
+  }, [snapshotSession])
+  // Composition controls are the only camera input in Snapshot: the target
+  // stays on the posed tattoo, and window resizing refits the same footprint.
+  useEffect(() => {
+    if (!snapshot.open || snapshot.mode !== 'compose' || !tattooFraming) return
+    setCameraState(frameTattoo(tattooFraming, snapshotCamera, viewportAspect))
+    setCameraRequestId((value) => value + 1)
+    setCameraPreset('custom')
+  }, [snapshot.open, snapshot.mode, tattooFraming, snapshotCamera, viewportAspect])
+  const snapshotBusy = snapshot.status === 'uploading' || snapshot.status === 'rendering'
+  useEffect(() => {
+    if (!snapshotBusy) { if (snapshot.mode === 'compose') setSnapshotElapsed(0); return }
+    const tick = () => setSnapshotElapsed(Math.max(0, Math.floor((Date.now() - snapshot.startedAt) / 1000)))
+    tick()
+    const timer = window.setInterval(tick, 1000)
+    return () => window.clearInterval(timer)
+  }, [snapshotBusy, snapshot.startedAt, snapshot.mode])
+  useEffect(() => {
+    if (showDashboard) snapshotSession.close()
+    return () => snapshotSession.close()
+  }, [snapshotSession, showDashboard, currentScene?.id])
   const [liveSyncStatus, setLiveSyncStatus] = useState<'idle' | 'syncing' | 'done' | 'error'>('idle')
   const [liveSyncMessage, setLiveSyncMessage] = useState('')
 
@@ -239,8 +346,8 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
     if (!showExportModal) return
     let cancelled = false
     const poll = () => {
-      void checkRenderServer().then((ok) => {
-        if (!cancelled) setRenderServerOnline(ok)
+      void getRenderServerStatus().then((status) => {
+        if (!cancelled) setRenderServer(status)
       })
     }
     poll()
@@ -251,6 +358,37 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
     }
   }, [showExportModal])
 
+  // History includes editable scene content, independently of camera movement,
+  // panel navigation, rendering and Focus. Image strings are shared by entries.
+  const editValue = useMemo(() => ({ uploadedImage, decalRotation, decalScale, decalColor,
+    decalOpacity, decalVisible, surfacePlacement, decalPosition, decalNormal, bodyMeshId,
+    skinToneId, bodyShape, bodyPose, poseId, bodyAppearance, studio, background, lightingPreset, lights, lookId }),
+  [uploadedImage, decalRotation, decalScale, decalColor, decalOpacity, decalVisible, surfacePlacement,
+    decalPosition, decalNormal, bodyMeshId, skinToneId, bodyShape, bodyPose, poseId, bodyAppearance,
+    studio, background, lightingPreset, lights, lookId])
+  const restoreEdits = useCallback((value: typeof editValue) => {
+    setUploadedImage(value.uploadedImage)
+    setDecalRotation(value.decalRotation); setDecalScale(value.decalScale)
+    setDecalColor(value.decalColor); setDecalOpacity(value.decalOpacity); setDecalVisible(value.decalVisible)
+    setSurfacePlacement(value.surfacePlacement); setDecalPosition(value.decalPosition); setDecalNormal(value.decalNormal)
+    setBodyMeshId(value.bodyMeshId); setSkinToneId(value.skinToneId)
+    setBodyShape(value.bodyShape); setBodyPose(value.bodyPose); setPoseId(value.poseId)
+    setBodyAppearance(value.bodyAppearance); setStudio(value.studio); setBackground(value.background)
+    setLightingPreset(value.lightingPreset); setLights(value.lights); setLookId(value.lookId)
+    setShapeMenu(null); setPanelRegions([]); setSelectedLight(null)
+    setPlacementStatus(value.surfacePlacement ? 'Placement restored. Click the skin to move it, or hold ⌘ / Ctrl and drag.' : 'Click the skin to place. Drag to orbit. Hold ⌘ / Ctrl and drag to move the tattoo.')
+  }, [])
+  const editHistory = useEditorHistory({ value: editValue, onRestore: restoreEdits,
+    scopeId: currentScene?.id, enabled: Boolean(currentScene) && !showDashboard })
+  const historyBlocked = showDashboard || snapshot.open || showExportModal || showRenderHistory || modelLoading
+  const historyCommands = useRef({ ...editHistory, blocked: historyBlocked, gesturesBlocked: showDashboard || modelLoading })
+  historyCommands.current = { ...editHistory, blocked: historyBlocked, gesturesBlocked: showDashboard || modelLoading }
+  useEffect(() => {
+    const root = canvasContainerRef.current
+    if (!root || showDashboard) return
+    return bindEditorHistory(root, window, () => historyCommands.current)
+  }, [showDashboard])
+
   // Callback for renderer ready
   const handleRendererReady = useCallback((renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera) => {
     setThreeRenderer(renderer)
@@ -260,56 +398,35 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
 
   type Shot = { contract: RenderContract; inkBlob: Blob }
 
-  const buildShot = useCallback(async (): Promise<Shot | null> => {
+  const buildShot = useCallback(async (options?: { snapshot?: SnapshotQuality; signal?: AbortSignal }): Promise<Shot> => {
+    options?.signal?.throwIfAborted()
+    if (options?.snapshot && (modelLoading || !uvPlacementRef.current?.getRegionFraming())) {
+      throw new Error('Wait for the figure to finish loading before taking a snapshot.')
+    }
     const placement = uvPlacementRef.current?.getPlacement()
-    if (!placement?.hasPlaced) {
-      setCloudRenderStatus('error')
-      setCloudRenderMessage('Place the tattoo on the mesh first.')
-      return null
+    if (decalVisible && placement?.imageReady === false) {
+      throw new Error('Wait for the design to finish loading before rendering.')
     }
-    if (!uploadedImage) {
-      setCloudRenderStatus('error')
-      setCloudRenderMessage('Upload a design image first.')
-      return null
+    const snap = (options?.snapshot ? orbitControlsRef.current?.freezeSnapshot(true) : orbitControlsRef.current?.getSnapshot()) ?? {
+      position: cameraState.position, target: cameraState.target, fov: cameraState.fov,
+      aspect: canvasHostRef.current ? canvasHostRef.current.clientWidth / Math.max(1, canvasHostRef.current.clientHeight) : 1,
     }
-
-    const inkBlob = await bakeInkLayer({
-      tattooImage: uploadedImage,
-      center: placement.center,
-      scaleUV: placement.scaleUV,
-      rotationRad: placement.rotationRad,
-    })
-
-    const snap = orbitControlsRef.current?.getSnapshot() ?? {
-      position: cameraState.position,
-      target: cameraState.target,
-      fov: cameraState.fov,
-      aspect:
-        threeRenderer?.domElement && threeRenderer.domElement.clientHeight > 0
-          ? threeRenderer.domElement.clientWidth / threeRenderer.domElement.clientHeight
-          : 1,
-    }
-    const baseWidth = qualityTier === 'preview' ? 512 : 2048
-    const outHeight = Math.max(1, Math.round(baseWidth / snap.aspect))
-
+    const dims = options?.snapshot ? snapshotOutput(snap.aspect, options.snapshot) : exportDimensions(exportPreset, qualityTier)
     const contract = buildRenderContract(
-      { bodyMeshId, skinToneId, poseId, lookId, qualityTier, finalSamples, bodyShape, bodyRegion: isolateRegion },
-      {
-        position: snap.position,
-        target: snap.target,
-        fov: snap.fov,
-        aspect: snap.aspect,
-      },
-      'ink.png',
-      { width: baseWidth, height: outHeight },
-      {
-        presetName: lightingPreset,
-        intensityScale: LIGHTING_PRESETS[lightingPreset].threeIntensityScale,
-        lights,
-      },
+      { bodyMeshId, skinToneId, poseId, lookId, qualityTier: options?.snapshot ? 'final' : qualityTier, finalSamples: options?.snapshot ? snapshotOutput(snap.aspect, options.snapshot).samples : finalSamples, bodyShape, bodyPose, bodyAppearance, studio: studioForExport(studio, BACKGROUNDS[background].stops[0], BACKGROUNDS[background].stops), bodyRegion: isolateRegion },
+      { position: snap.position, target: snap.target, fov: snap.fov, aspect: options?.snapshot ? snap.aspect : dims.width / dims.height },
+      'ink.png', dims,
+      { presetName: lightingPreset, intensityScale: LIGHTING_PRESETS[lightingPreset].threeIntensityScale, lights: structuredClone(lights) },
     )
-    return { contract, inkBlob }
-  }, [uploadedImage, bodyMeshId, skinToneId, poseId, lookId, qualityTier, finalSamples, bodyShape, isolateRegion, cameraState, threeRenderer, lightingPreset, lights])
+    // Freeze scene metadata before the asynchronous image bake.
+    const frozenContract = structuredClone(contract)
+    const inkBlob = decalVisible && placement?.hasPlaced && placement.visible
+      ? await bakeInkLayer({ tattooImage: placement.imageSource ?? resolveTattooSource(uploadedImage), center: placement.center,
+          scaleUV: placement.scaleUV, rotationRad: placement.rotationRad, surface: placement.surface, signal: options?.signal })
+      : await blankInkLayer()
+    options?.signal?.throwIfAborted()
+    return { contract: frozenContract, inkBlob }
+  }, [uploadedImage, decalVisible, exportPreset, bodyMeshId, skinToneId, poseId, lookId, qualityTier, finalSamples, bodyShape, bodyPose, bodyAppearance, isolateRegion, cameraState, lightingPreset, lights, studio, background, modelLoading])
 
   const handleLookChange = useCallback((id: string) => {
     setLookId(id)
@@ -322,83 +439,95 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
     }
   }, [])
 
-  const loadScene = (scene: SceneData) => {
+  const currentShotBuilder = useRef(buildShot)
+  currentShotBuilder.current = buildShot
+
+  const loadScene = (scene: SceneData) => afterSaving(() => {
     const migrated = migrateScene(scene)
+    setInspectorTab('tattoo')
     setCurrentScene(migrated)
     setUploadedImage(migrated.decalImage)
     setBodyMeshId(migrated.bodyMeshId!)
     setSkinToneId(migrated.skinToneId!)
     setPoseId(migrated.poseId!)
+    setBodyPose(normalizePose(migrated.bodyPose))
+    setBodyAppearance(normalizeAppearance(migrated.bodyAppearance))
+    setStudio(normalizeStudio(migrated.studio))
     setLookId(migrated.lookId!)
     setQualityTier(migrated.qualityTier!)
     setFinalSamples(migrated.finalSamples ?? FINAL_SAMPLES.default)
     setBodyShape(normalizeShape(migrated.bodyShape))
     setIsolateRegion(migrated.bodyRegion ?? null)
     const look = findById(REGISTRY.looks, migrated.lookId!)
-    if (look) {
-      setLightingPreset(look.previewLighting)
-      setBackground(look.previewBackground as BgKey)
-      setLights(resolveRig(look.previewLighting))
-      setSelectedLight(null)
-    }
+    const preset = Object.hasOwn(LIGHTING_PRESETS, migrated.lightingPreset)
+      ? migrated.lightingPreset as LightingPresetKey : look?.previewLighting ?? 'studio'
+    setLightingPreset(preset)
+    setBackground(Object.hasOwn(BACKGROUNDS, migrated.background) ? migrated.background as BgKey : 'white')
+    setLights(migrated.lights ? structuredClone(migrated.lights) : resolveRig(preset))
+    setSelectedLight(null)
+    setPhotoMode(false)
+    setShapeMenu(null)
+    setPanelRegions([])
+    setSurfacePlacement(migrated.surfacePlacement ?? null)
+    setDecalVisible(migrated.decalVisible)
+    setPlacementStatus(migrated.surfacePlacement ? 'Placed on the skin. Click to move, or hold ⌘ / Ctrl and drag.' : 'Click the skin to place. Drag to orbit. Hold ⌘ / Ctrl and drag to move the tattoo.')
     setDecalRotation(migrated.decalRotation)
     setDecalScale(migrated.decalScale)
     setDecalColor(migrated.decalColor ?? '#ffffff')
     setDecalOpacity(migrated.decalOpacity ?? 1)
     setDecalPosition(migrated.decalPosition ?? null)
     setDecalNormal(migrated.decalNormal ?? null)
-    if (!look) {
-      setBackground(migrated.background as BgKey)
-      const preset = migrated.lightingPreset as LightingPresetKey
-      setLightingPreset(preset)
-      setLights(resolveRig(preset))
-      setSelectedLight(null)
-    }
     setShowDashboard(false)
     setCameraState(migrated.camera ?? CAMERA_PRESETS.threeQuarter)
-  }
+    setCameraPreset('custom')
+  })
 
   // Save editor state to current scene (except thumbnail)
   useEffect(() => {
-    if (!currentScene) return
-    const id = setTimeout(() => {
-      const updated: SceneData = {
-        ...currentScene,
-        decalImage: uploadedImage,
-        model: 'FinalBaseMesh',
-        decalVisible,
-        decalRotation,
-        decalScale,
-        decalColor,
-        decalOpacity,
-        decalPosition,
-        decalNormal,
-        background,
-        lightingPreset,
-        camera: cameraState,
-        bodyMeshId,
-        skinToneId,
-        poseId,
-        lookId,
-        qualityTier,
-        finalSamples,
-        bodyShape,
-        bodyRegion: isolateRegion,
-        // thumbnail will be updated in a separate effect
-      }
-      void updateScene(updated).then(() => setCurrentScene(updated))
-    }, 600)
+    if (!currentScene || showDashboard) return
+    const updated: SceneData = {
+      ...currentScene,
+      decalImage: uploadedImage,
+      model: 'FinalBaseMesh',
+      decalVisible,
+      surfacePlacement,
+      decalRotation,
+      decalScale,
+      decalColor,
+      decalOpacity,
+      decalPosition,
+      decalNormal,
+      background,
+      studio: normalizeStudio(studio),
+      lightingPreset,
+      lights: structuredClone(lights),
+      camera: cameraState,
+      bodyMeshId,
+      skinToneId,
+      poseId,
+      bodyPose,
+      bodyAppearance,
+      lookId,
+      qualityTier,
+      finalSamples,
+      bodyShape,
+      bodyRegion: isolateRegion,
+      // thumbnail will be updated in a separate effect
+    }
+    stageScene(updated)
+    const id = setTimeout(() => { void flushPendingSave().catch(() => {}) }, 600)
+    saveTimer.current = id
     return () => clearTimeout(id)
     // currentScene is deliberately not a dependency: this effect writes it, so
     // including it would re-run on every save and loop forever.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [uploadedImage, decalVisible, decalRotation, decalScale, decalColor, decalOpacity, decalPosition, decalNormal, background, lightingPreset, cameraState, bodyMeshId, skinToneId, poseId, lookId, qualityTier, finalSamples, bodyShape, isolateRegion])
+  }, [currentScene?.id, showDashboard, stageScene, flushPendingSave, uploadedImage, decalVisible, surfacePlacement, decalRotation, decalScale, decalColor, decalOpacity, decalPosition, decalNormal, background, studio, lightingPreset, lights, cameraState, bodyMeshId, skinToneId, poseId, lookId, qualityTier, finalSamples, bodyShape, bodyPose, bodyAppearance, isolateRegion])
 
   // Capture a dashboard thumbnail once the user pauses. Encoding the full
   // canvas on every change produced multi-megabyte data URLs and a save per
   // slider tick; this waits for 1.5 s of quiet and shrinks to 512 px.
   useEffect(() => {
-    if (!currentScene || !canvasContainerRef.current) return
+    if (!currentScene || showDashboard || !canvasContainerRef.current) return
     const timeout = setTimeout(() => {
       if (document.hidden) return
       const canvas = canvasContainerRef.current?.querySelector('canvas') as HTMLCanvasElement | null
@@ -413,13 +542,32 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
       // A stored (signed URL) thumbnail counts as present; only replace it
       // with a fresh capture, never with null because a capture failed.
       if (dataUrl === null && currentScene.thumbnail !== null) return
-      const updated: SceneData = { ...currentScene, thumbnail: dataUrl }
-      void updateScene(updated).then(() => setCurrentScene(updated))
+      const updated: SceneData = { ...(sceneSaves.peek(currentScene.id) ?? currentScene), thumbnail: dataUrl }
+      stageScene(updated)
+      void flushPendingSave().catch(() => {})
     }, 1500)
     return () => clearTimeout(timeout)
-  }, [currentScene, uploadedImage, decalRotation, decalScale, decalColor, decalOpacity, decalPosition, decalNormal, background, lightingPreset, cameraState, bodyShape, isolateRegion])
+  }, [currentScene, showDashboard, sceneSaves, stageScene, flushPendingSave, uploadedImage, surfacePlacement, decalRotation, decalScale, decalColor, decalOpacity, decalPosition, decalNormal, background, studio, lightingPreset, lights, cameraState, bodyShape, bodyPose, bodyAppearance, isolateRegion])
+
+  const handleBodyMeshChange = (id: string) => {
+    if (id === bodyMeshId || !findById(REGISTRY.bodyMeshes, id)) return
+    setBodyMeshId(id)
+    setSurfacePlacement(null)
+    setDecalPosition(null)
+    setDecalNormal(null)
+    setDecalVisible(false)
+    setPanelRegions([])
+    setShapeMenu(null)
+    setPlacementStatus('Body changed. Click the skin to place your design at the same size.')
+  }
 
   // Reset decal transform
+  const handlePhotoModeChange = (enabled: boolean) => {
+    setPhotoMode(enabled)
+    setShapeMenu(null)
+    setPanelRegions([])
+  }
+
   const handleResetDecal = () => {
     setDecalRotation(0)
     setDecalScale(1)
@@ -427,22 +575,45 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
     setDecalOpacity(1)
   }
 
+  const handleOrbitStart = useCallback(() => setCameraPreset('custom'), [])
+
   const handleCameraPresetChange = (preset: CameraPresetKey) => {
     setCameraPreset(preset)
-    setCameraState(CAMERA_PRESETS[preset])
+    const view = CAMERA_PRESETS[preset]
+    const framing = uvPlacementRef.current?.getRegionFraming()
+    const rect = canvasHostRef.current?.getBoundingClientRect()
+    const fitted = framing ? frameRegionCamera(framing, view.position, view.fov,
+      rect && rect.height > 0 ? rect.width / rect.height : 1) : view
+    const zoom = preset === 'wide' ? 1.3 : preset === 'closeup' ? 0.68 : 1
+    setCameraState({ ...fitted, position: fitted.position.map((n, i) =>
+      fitted.target[i] + (n - fitted.target[i]) * zoom) as [number, number, number] })
+    setCameraRequestId((id) => id + 1)
   }
 
   // Export functionality using Three.js renderer
   const exportImage = async () => {
     if (!threeRenderer || !threeScene || !threeCamera || isExporting) return
+    if (modelLoading || !uvPlacementRef.current?.getRegionFraming()) {
+      setExportError('Wait for the body to finish loading, then export again.')
+      return
+    }
     
     setIsExporting(true)
-    
+    setExportError('')
+    setHistoryWarning('')
+    const previousTarget = threeRenderer.getRenderTarget()
     let renderTarget: THREE.WebGLRenderTarget | null = null
     const persp = threeCamera as THREE.PerspectiveCamera
     const hadPerspective = persp.isPerspectiveCamera
     const savedAspect = hadPerspective ? persp.aspect : 0
-    
+    let rendererRestored = false
+    const restoreRenderer = () => {
+      if (rendererRestored) return
+      rendererRestored = true
+      threeRenderer.setRenderTarget(previousTarget)
+      if (hadPerspective) { persp.aspect = savedAspect; persp.updateProjectionMatrix() }
+      renderTarget?.dispose()
+    }
     try {
       const preset = EXPORT_PRESETS[exportPreset as keyof typeof EXPORT_PRESETS]
       const { width, height } = preset
@@ -450,6 +621,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
       renderTarget = new THREE.WebGLRenderTarget(width, height, {
         format: THREE.RGBAFormat,
         type: THREE.UnsignedByteType,
+        colorSpace: THREE.SRGBColorSpace,
         generateMipmaps: false,
         minFilter: THREE.LinearFilter,
         magFilter: THREE.LinearFilter,
@@ -462,7 +634,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
       }
       
       threeRenderer.setRenderTarget(renderTarget)
-      threeRenderer.render(threeScene, threeCamera)
+      withoutEditorHelpers(threeScene, () => threeRenderer.render(threeScene, threeCamera))
       threeRenderer.setRenderTarget(null)
       
       // Read pixels (WebGL origin is bottom-left; canvas is top-left → flip Y)
@@ -492,27 +664,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
       finalCanvas.width = width
       finalCanvas.height = height
       
-      // Set background
-      const bgStyle = BG_PRESETS[background]
-      if (typeof bgStyle.background === 'string' && bgStyle.background.startsWith('#')) {
-        finalCtx.fillStyle = bgStyle.background
-        finalCtx.fillRect(0, 0, width, height)
-      } else if (bgStyle.background.includes('gradient')) {
-        const gradient = finalCtx.createLinearGradient(0, 0, width, height)
-        if (bgStyle.background.includes('bluepurple')) {
-          gradient.addColorStop(0, '#3a1c71')
-          gradient.addColorStop(0.5, '#d76d77')
-          gradient.addColorStop(1, '#ffaf7b')
-        } else if (bgStyle.background.includes('peach')) {
-          gradient.addColorStop(0, '#ffecd2')
-          gradient.addColorStop(1, '#fcb69f')
-        } else {
-          gradient.addColorStop(0, '#444')
-          gradient.addColorStop(1, '#888')
-        }
-        finalCtx.fillStyle = gradient
-        finalCtx.fillRect(0, 0, width, height)
-      }
+      paintExportBackground(finalCtx, width, height, background)
       
       // Draw the rendered 3D content
       finalCtx.drawImage(canvas, 0, 0, width, height)
@@ -529,46 +681,27 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
         finalCtx.restore()
       }
       
-      // Convert to blob and download
-      finalCanvas.toBlob((blob) => {
-        if (blob) {
-          void addRenderHistory(
-            {
-              source: 'canvas',
-              width,
-              height,
-              exportPreset,
-              sceneName: currentScene?.name,
-              lookId,
-            },
-            blob
-          )
-          const url = URL.createObjectURL(blob)
-          const a = document.createElement('a')
-          a.href = url
-          a.download = `smart-ink-${exportPreset}-${Date.now()}.png`
-          document.body.appendChild(a)
-          a.click()
-          document.body.removeChild(a)
-          URL.revokeObjectURL(url)
-        }
-        setIsExporting(false)
-      }, 'image/png', 1.0)
-    } catch (error) {
-      console.error('Export failed:', error)
-      setIsExporting(false)
-    } finally {
-      threeRenderer.setRenderTarget(null)
-      if (hadPerspective) {
-        persp.aspect = savedAspect
-        persp.updateProjectionMatrix()
+      // Restore the interactive camera before image encoding or history I/O.
+      restoreRenderer()
+      const blob = await canvasPng(finalCanvas)
+      downloadBlob(`smart-ink-${exportPreset}-${Date.now()}.png`, blob)
+      try {
+        await addRenderHistory({ source: 'canvas', width, height, exportPreset,
+          sceneName: currentScene?.name, lookId }, blob)
+      } catch {
+        setHistoryWarning('Your image was downloaded, but could not be added to history. Keep the downloaded copy.')
       }
-      renderTarget?.dispose()
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : 'Could not export the image. Please try again.')
+    } finally {
+      setIsExporting(false)
+      restoreRenderer()
     }
   }
 
   const exportForBlender = async () => {
     setIsExportingBlender(true)
+    setExportError('')
     try {
       const shot = await buildShot()
       if (!shot) return
@@ -577,7 +710,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
         { filename: 'contract.json', blob: new Blob([JSON.stringify(shot.contract, null, 2)], { type: 'application/json' }) },
       ])
     } catch (e) {
-      console.error('Export failed:', e)
+      setExportError(e instanceof Error ? e.message : 'Could not prepare the Blender files.')
     } finally {
       setIsExportingBlender(false)
     }
@@ -595,7 +728,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
       }
       await syncToLiveWatcher(shot.contract, shot.inkBlob)
       setLiveSyncStatus('done')
-      setLiveSyncMessage('Synced — run: cd smartink-live && blender --python watch_dev.py')
+      setLiveSyncMessage('Scene sent to Blender. The live preview will update if the watcher is running.')
     } catch (e) {
       console.error('Live sync failed:', e)
       setLiveSyncStatus('error')
@@ -603,38 +736,90 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
     }
   }
 
+  const renderBusy = cloudRenderStatus === 'uploading' || cloudRenderStatus === 'rendering'
+  useEffect(() => {
+    if (!renderBusy) return
+    const started = Date.now()
+    const interval = window.setInterval(() => setRenderElapsed(Math.floor((Date.now() - started) / 1000)), 1000)
+    return () => window.clearInterval(interval)
+  }, [renderBusy])
+  useEffect(() => () => { renderController.current?.abort() }, [])
+  useEffect(() => () => { if (cloudRenderImage) URL.revokeObjectURL(cloudRenderImage) }, [cloudRenderImage])
+
   const handleCloudRender = async () => {
+    if (renderController.current) return
+    const controller = new AbortController()
+    renderController.current = controller
     setCloudRenderStatus('uploading')
-    setCloudRenderMessage('Preparing scene...')
-    setCloudRenderImage(null)
-
-    const onStatusChange = (status: RenderStatus, message?: string) => {
-      setCloudRenderStatus(status)
-      setCloudRenderMessage(message || '')
-    }
-
+    setCloudRenderMessage('Preparing scene…')
+    setHistoryWarning('')
+    setRenderElapsed(0)
+    // Keep the previous successful render available while a new one is running.
     try {
       const shot = await buildShot()
-      if (!shot) return
-      const imageUrl = await renderContract(shot.contract, shot.inkBlob, { onStatusChange })
-      setCloudRenderImage(imageUrl)
-      const renderBlob = await fetch(imageUrl).then((r) => r.blob())
-      await addRenderHistory(
-        {
-          source: 'cycles',
-          width: shot.contract.output.width,
-          height: shot.contract.output.height,
-          qualityTier: shot.contract.output.qualityTier,
-          lookId: shot.contract.lookId,
-          sceneName: currentScene?.name,
+      controller.signal.throwIfAborted()
+      const imageUrl = await renderContract(shot.contract, shot.inkBlob, {
+        signal: controller.signal,
+        onStatusChange: (status, message) => {
+          if (renderController.current !== controller || controller.signal.aborted) return
+          setCloudRenderStatus(status)
+          setCloudRenderMessage(message ?? '')
         },
-        renderBlob
-      )
-    } catch (e) {
-      console.error('Render failed:', e)
-      setCloudRenderStatus('error')
-      setCloudRenderMessage(e instanceof Error ? e.message : 'Unknown error')
+      })
+      if (controller.signal.aborted) { URL.revokeObjectURL(imageUrl); return }
+      setCloudRenderImage(imageUrl)
+      setCloudRenderStatus('done')
+      setCloudRenderMessage('Render complete.')
+      if (renderController.current === controller) renderController.current = null
+      try {
+        const renderBlob = await fetch(imageUrl).then((r) => r.blob())
+        await addRenderHistory({ source: 'cycles', width: shot.contract.output.width,
+          height: shot.contract.output.height, qualityTier: shot.contract.output.qualityTier,
+          lookId: shot.contract.lookId, sceneName: currentScene?.name }, renderBlob)
+      } catch {
+        setHistoryWarning('Your render is ready to download, but could not be added to history.')
+      }
+    } catch (error) {
+      setCloudRenderStatus(controller.signal.aborted ? 'cancelled' : 'error')
+      setCloudRenderMessage(controller.signal.aborted ? (renderServer?.cancellationSupported ? 'Render cancelled. You can start again.' : 'Stopped waiting. This server may finish the render in the background.')
+        : error instanceof Error ? error.message : 'Rendering failed. Please try again.')
+    } finally {
+      if (renderController.current === controller) renderController.current = null
     }
+  }
+
+  const openSnapshot = () => {
+    if (renderBusy || modelLoading || !canvasHostSized || snapshotSession.getState().open) return
+    setShapeMenu(null)
+    setPanelRegions([])
+    setAccountMenuOpen(false)
+    snapshotReturnCamera.current = orbitControlsRef.current?.freezeSnapshot() ?? structuredClone(cameraState)
+    const tattoo = uvPlacementRef.current?.getTattooFraming() ?? null
+    const region = uvPlacementRef.current?.getRegionFraming()
+    const view = snapshotReturnCamera.current
+    const direction = view.position.map((value, i) => value - view.target[i]) as [number, number, number]
+    setTattooFraming(tattoo ?? (region ? regionSnapshotFraming(region, direction) : null))
+    setSnapshotHasTattoo(Boolean(tattoo))
+    setSnapshotFramingHint(tattoo ? '' : uvPlacementRef.current?.getPlacement().hasPlaced
+      ? 'The tattoo is covered or outside this Focus view. The camera is centered on the visible figure.'
+      : 'Camera centered on the figure. Return to editing and click the skin to place the example tattoo, or render without ink.')
+    setSnapshotCamera({ ...DEFAULT_TATTOO_CAMERA_ADJUSTMENT })
+    snapshotSession.open(async (signal) => ({
+      ...await currentShotBuilder.current({ snapshot: snapshotSession.getState().quality, signal }), sceneName: currentScene?.name,
+    }))
+  }
+  const aimSnapshotLights = () => {
+    if (!snapshotHasTattoo || !tattooFraming) return
+    setLights((previous) => previous.map((light) => light.type === 'ambient' ? light : {
+      ...light, target: [...tattooFraming.center] as [number, number, number],
+    }))
+  }
+  const downloadSnapshot = () => {
+    if (!snapshot.imageUrl) return
+    const link = document.createElement('a')
+    link.href = snapshot.imageUrl
+    link.download = `smart-ink-snapshot-${Date.now()}.png`
+    link.click()
   }
 
   // R3F measures the canvas container as <Canvas> mounts. Mounting the editor
@@ -649,6 +834,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
     const measure = () => {
       const rect = el.getBoundingClientRect()
       setCanvasHostSized(rect.width > 0 && rect.height > 0)
+      if (rect.width > 0 && rect.height > 0) setViewportAspect(rect.width / rect.height)
     }
     measure()
     const observer = new ResizeObserver(measure)
@@ -660,6 +846,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        if (snapshot.open) { closeSnapshot(); return }
         setAccountMenuOpen(false)
         if (showRenderHistory) {
           setShowRenderHistory(false)
@@ -671,48 +858,54 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [showRenderHistory])
+  }, [showRenderHistory, snapshot.open, closeSnapshot])
 
   if (showDashboard) {
     return (
       <div style={{ position: 'relative', width: '100%', minHeight: '100vh' }}>
         <ScenesDashboard
           onSelectScene={loadScene}
-          onOpenLanding={onHome}
+          onOpenLanding={() => afterSaving(onHome)}
         />
       </div>
     )
   }
 
   return (
-    <div className="editor-app-root" ref={canvasContainerRef}>
-      <header className="editor-toolbar editor-toolbar--main">
-        <div className="editor-toolbar-brand" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+    <div className={`editor-app-root${photoMode ? ' editor-app-root--photo' : ''}`} ref={canvasContainerRef}>
+      <header className="editor-toolbar editor-toolbar--main" inert={snapshot.open}>
+        <button type="button" className="editor-toolbar-brand editor-home-link" onClick={() => afterSaving(onHome)} aria-label="Smart Ink home">
           <span className="nav-logo nav-logo--sm" aria-hidden />
           Smart Ink
-        </div>
-        <div className="editor-toolbar-center" aria-hidden>
-          <span className="editor-toolbar-spacer" />
+        </button>
+        <div className="editor-toolbar-center editor-scene-heading">
+          <input key={currentScene?.id} className="editor-scene-name" aria-label="Scene name"
+            defaultValue={currentScene?.name ?? 'Untitled Scene'} maxLength={100}
+            onBlur={(event) => {
+              if (!currentScene) return
+              const name = event.currentTarget.value.trim() || currentScene.name
+              event.currentTarget.value = name
+              if (name === currentScene.name) return
+              stageScene({ ...(sceneSaves.peek(currentScene.id) ?? currentScene), name })
+              void flushPendingSave().catch(() => {})
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur() }
+              if (event.key === 'Escape') { event.stopPropagation(); event.currentTarget.value = currentScene?.name ?? ''; event.currentTarget.blur() }
+            }} />
+          <span className={`scene-save-status scene-save-status--${saveState.status}`} role="status" aria-live="polite">
+            {saveState.status === 'saved' ? 'Saved' : saveState.status === 'error' ? 'Not saved' : 'Saving…'}
+          </span>
+          {saveState.status === 'error' && <button type="button" className="tool-btn tool-btn--ghost" onClick={() => void flushPendingSave().catch(() => {})}>Retry save</button>}
         </div>
         <div className="editor-toolbar-actions editor-toolbar-actions--spread">
-          <button
-            type="button"
-            className="tool-btn tool-btn--ghost"
-            title="Share a render"
-            onClick={() => setShowRenderHistory(true)}
-          >
-            Share
-          </button>
-          <button type="button" className="tool-btn tool-btn--ghost" onClick={() => setShowExportModal(true)}>
-            Export
-          </button>
-          <button type="button" className="tool-btn-nav tool-btn-nav--purple" onClick={onHome}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-              <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" />
-            </svg>
-            Home
-          </button>
-          <button type="button" className="tool-btn-nav tool-btn-nav--muted" onClick={() => setShowDashboard(true)}>
+          <div className="editor-history-controls" role="group" aria-label="Edit history">
+            <button type="button" className="tool-btn tool-btn--ghost" aria-label="Undo edit" title="Undo · ⌘ / Ctrl Z" disabled={historyBlocked || !editHistory.canUndo} onClick={editHistory.undo}><FaUndo aria-hidden="true" /><span>Undo</span></button>
+            <button type="button" className="tool-btn tool-btn--ghost" aria-label="Redo edit" title="Redo · ⌘ / Ctrl Shift Z" disabled={historyBlocked || !editHistory.canRedo} onClick={editHistory.redo}><FaRedo aria-hidden="true" /><span>Redo</span></button>
+          </div>
+          <button type="button" className="tool-btn tool-btn--primary" onClick={openSnapshot} disabled={modelLoading || !canvasHostSized || renderBusy} title="Frame the tattoo and set up a Blender snapshot">Snapshot</button>
+          <EditorOutputMenu onExport={() => setShowExportModal(true)} onShare={() => setShowRenderHistory(true)} />
+          <button type="button" className="tool-btn-nav tool-btn-nav--muted" onClick={() => afterSaving(() => setShowDashboard(true))}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
               <path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z" />
             </svg>
@@ -733,10 +926,10 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
             {accountMenuOpen && (
               <div className="account-menu" role="menu">
                 <div className="account-menu-email">{session.email}</div>
-                <button type="button" role="menuitem" onClick={() => onSignOut()}>
+                <button type="button" role="menuitem" onClick={() => afterSaving(() => onSignOut())}>
                   Sign out
                 </button>
-                <button type="button" role="menuitem" onClick={() => onSignOut({ everywhere: true })}>
+                <button type="button" role="menuitem" onClick={() => afterSaving(() => onSignOut({ everywhere: true }))}>
                   Sign out everywhere
                 </button>
               </div>
@@ -745,18 +938,34 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
         </div>
       </header>
 
+      {saveState.status === 'error' && <div className="editor-notice" role="alert">Your latest changes are still here. Saving failed; retry before leaving this page.</div>}
+      {photoMode && <div className="photo-mode-actions" inert={snapshot.open} style={snapshot.open ? { visibility: 'hidden' } : undefined}>
+        <button type="button" className="ep-btn" onClick={() => setPhotoMode(false)}>Exit Clean view · Esc</button>
+        <button type="button" className="ep-btn ep-btn--primary" onClick={openSnapshot} disabled={modelLoading || !canvasHostSized || renderBusy}>Snapshot</button>
+        <button type="button" className="ep-btn" onClick={() => setShowExportModal(true)}>Export</button>
+      </div>}
       <div className="editor-body-row">
-        <EditorLeftPanel
-          sceneName={currentScene?.name ?? 'Untitled'}
-          bodyLabel={regionLabel(isolateRegion)}
-          onBack={() => setShowDashboard(true)}
-        />
+        <EditorLeftPanel currentImage={uploadedImage}
+          onChooseArtwork={(source) => { setUploadedImage(source); setDecalVisible(true); setInspectorTab('tattoo'); setPanelRegions([]); uvPlacementRef.current?.placeInView() }}
+          disabled={snapshot.open || modelLoading} bodyLabel={regionLabel(isolateRegion)}
+          activeTab={inspectorTab} onSelect={(tab) => { setInspectorTab(tab); setPanelRegions([]) }}
+          collapsed={sidebarCollapsed} onToggleCollapsed={() => setSidebarCollapsed(value => !value)}
+          tattooVisible={decalVisible} onToggleTattoo={() => setDecalVisible(value => !value)}
+          studioLabel={studio.mode === 'sweep' ? 'Studio sweep' : 'Simple background'} />
 
         <div className="editor-canvas-host">
+          {!photoMode && <ViewportControls disabled={snapshot.open || modelLoading}
+            showPlacementTips={showPlacementTips} onPlacementTipsChange={togglePlacementTips}
+            cameraPreset={cameraPreset} cameras={CAMERA_PRESETS}
+            onCameraChange={(preset) => handleCameraPresetChange(preset as CameraPresetKey)}
+            region={isolateRegion} onRegionChange={setIsolateRegion} onHighlightRegions={setPanelRegions}
+            onFit={() => handleFrameRegion(uvPlacementRef.current?.getRegionFraming() ?? null)}
+            onCleanView={() => handlePhotoModeChange(true)} performanceMode={performanceMode} onPerformanceChange={setPerformanceMode} />}
+          <div className="editor-canvas-stage">
           <div
             className="editor-canvas-bg"
             style={{
-              ...(BG_PRESETS[background] || BG_PRESETS.white),
+              background: studio.mode === 'sweep' ? studio.color : BACKGROUNDS[background].css,
               transition: 'background 0.4s',
             }}
           />
@@ -770,21 +979,21 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
               Suspense boundary *inside* the Canvas (see LoadingSignal).
             */}
             <ErrorBoundary
-              resetKeys={[isolateRegion]}
+              resetKeys={[isolateRegion, bodyMeshId]}
               fallback={({ error, reset }) => (
                 <CrashScreen
                   inline
                   title="The 3D preview stopped"
-                  body="Your scene is saved. Try again, or go back to your scenes."
+                  body="Try again, or go back to your scenes. Your latest edits will be saved before leaving."
                   error={error}
                   actions={[
                     { label: 'Try again', onClick: reset, primary: true },
                     {
                       label: 'Back to scenes',
-                      onClick: () => {
+                      onClick: () => afterSaving(() => {
                         reset()
                         setShowDashboard(true)
-                      },
+                      }),
                     },
                   ]}
                 />
@@ -792,9 +1001,9 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
             >
             <Canvas
               className="editor-r3f-canvas"
-              camera={{ position: cameraState.position, fov: cameraState.fov }}
+              camera={INITIAL_CANVAS_CAMERA}
               shadows={!performanceMode}
-              dpr={performanceMode ? 0.7 : window.devicePixelRatio}
+              dpr={performanceMode ? 0.7 : Math.min(2, window.devicePixelRatio)}
               gl={{ preserveDrawingBuffer: true, antialias: true }}
             >
         <ExportRenderer onRendererReady={handleRendererReady} />
@@ -805,9 +1014,11 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
           scale={LIGHTING_PRESETS[lightingPreset].threeIntensityScale}
           performanceMode={performanceMode}
         />
-        <LightHandles lights={lights} selectedIndex={selectedLight} onSelect={setSelectedLight} />
+        <StudioBackdrop studio={studio} isolateRegion={isolateRegion} performanceMode={performanceMode} />
+        {!photoMode && !snapshot.open && studio.showGuides && <LightHandles lights={lights} selectedIndex={selectedLight} onSelect={setSelectedLight} />}
         <Suspense fallback={<LoadingSignal onChange={setModelLoading} />}>
           <ModelWithUVTattoo
+            key={`${currentScene?.id}:${bodyMeshId}`}
             ref={uvPlacementRef}
             uploadedImage={uploadedImage}
             skinToneId={skinToneId}
@@ -817,26 +1028,41 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
             decalColor={decalColor}
             decalOpacity={decalOpacity}
             setDecalVisible={setDecalVisible}
-            showSafeZone={true}
+            visible={decalVisible}
+            initialPlacement={surfacePlacement}
+            onPlacementChange={setSurfacePlacement}
+            onPlacementStatus={setPlacementStatus}
             lights={lights}
             intensityScale={LIGHTING_PRESETS[lightingPreset].threeIntensityScale}
             performanceMode={performanceMode}
             bodyShape={bodyShape}
+            bodyPose={bodyPose}
+            bodyAppearance={bodyAppearance}
             isolateRegion={isolateRegion}
-            highlightRegions={highlightRegions}
-            onHoverRegion={setHoverRegion}
+            highlightRegions={photoMode || snapshot.open ? [] : highlightRegions}
+            editingEnabled={!photoMode && !snapshot.open}
             onRegionPress={handleRegionPress}
             onFrameRegion={handleFrameRegion}
           />
         </Suspense>
         <OrbitControlsWithCmdLock
+          enabled={!snapshot.open}
+          key={currentScene?.id}
           ref={orbitControlsRef}
           cameraState={cameraState}
+          cameraRequestId={cameraRequestId}
           setCameraState={setCameraState}
+          onOrbitStart={handleOrbitStart}
         />
             </Canvas>
             </ErrorBoundary>
             </>
+            )}
+            {showPlacementTips && !modelLoading && !photoMode && !snapshot.open && (
+              <div className="placement-help" role="status" aria-live="polite">
+                <strong>Surface placement</strong>
+                <span>{placementStatus}</span>
+              </div>
             )}
             {modelLoading && (
               <div className="editor-canvas-loading" role="status">
@@ -844,26 +1070,63 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
               </div>
             )}
           </div>
+          {snapshot.open && <SnapshotOverlay
+            mode={snapshot.mode} onAdjust={snapshotSession.adjust}
+            cameraControls={<SnapshotCameraControls adjustment={snapshotCamera} onChange={setSnapshotCamera}
+              onReset={() => setSnapshotCamera({ ...DEFAULT_TATTOO_CAMERA_ADJUSTMENT })} hasTattoo={snapshotHasTattoo} />}
+            lightingControls={<>
+              <button type="button" className="snapshot-button" onClick={aimSnapshotLights} disabled={!snapshotHasTattoo}>Aim lights at tattoo</button>
+              <LightingControls lights={lights} selectedIndex={selectedLight} onSelectLight={setSelectedLight}
+                onChange={setLights} onReset={() => setLights(resolveRig(lightingPreset))}
+                preset={lightingPreset} onPresetChange={(preset) => { setLightingPreset(preset); setLights(resolveRig(preset)); setSelectedLight(1) }} />
+            </>}
+            framingHint={snapshotHasTattoo ? (decalVisible ? 'Camera anchored to your tattoo. Adjust the shot, then render.' : 'Camera anchored to the placement. The tattoo is hidden in this before view.') : snapshotFramingHint}
+            previewUrl={snapshot.previewUrl} progress={snapshot.progress}
+            status={snapshot.status} imageUrl={snapshot.imageUrl} message={snapshot.message}
+            elapsed={snapshotElapsed} quality={snapshot.quality} warning={snapshot.warning}
+            comparisonAvailable={snapshot.imageMatchesView && (!snapshot.aspect || Math.abs(viewportAspect / snapshot.aspect - 1) < 0.005)}
+            comparisonUnavailableReason={!snapshot.imageMatchesView ? 'This image is from the previous shot. Render the new camera and lighting to compare.' : undefined}
+            onQualityChange={snapshotSession.setQuality} onRender={() => void snapshotSession.render()}
+            onCancel={snapshotSession.cancel} onClose={closeSnapshot} onDownload={downloadSnapshot}
+          />}
+          </div>
         </div>
 
         <TopMenuBar
+          activeTab={inspectorTab} onTabChange={setInspectorTab}
+          disabled={snapshot.open}
+          key={currentScene?.id}
+          bodyMeshId={bodyMeshId}
+          onBodyMeshChange={handleBodyMeshChange}
           skinToneId={skinToneId}
           lookId={lookId}
           lights={lights}
           selectedLight={selectedLight}
           lightingPreset={lightingPreset}
+          onLightingPresetChange={(preset) => { setLightingPreset(preset); setLights(resolveRig(preset)); setSelectedLight(1) }}
+          studio={studio}
+          background={background} onBackgroundChange={setBackground}
+          onStudioChange={(value) => setStudio(normalizeStudio(value))}
           onSelectLight={setSelectedLight}
           onLightsChange={setLights}
           onSkinChange={setSkinToneId}
           onLookChange={handleLookChange}
           bodyShape={bodyShape}
-          onBodyShapeChange={setBodyShape}
+          poseId={poseId}
+          bodyPose={bodyPose}
+          bodyAppearance={bodyAppearance}
+          onAppearanceChange={(appearance) => setBodyAppearance(normalizeAppearance(appearance))}
+          onFramePose={() => handleFrameRegion(uvPlacementRef.current?.getRegionFraming() ?? null)}
+          onPosePresetChange={handlePosePreset}
+          onBodyPoseChange={handleBodyPoseChange}
+          onBodyShapeChange={(shape) => setBodyShape(normalizeShape(shape))}
           isolateRegion={isolateRegion}
           onIsolateRegionChange={setIsolateRegion}
           onHighlightRegions={setPanelRegions}
           setUploadedImage={setUploadedImage}
           uploadedImage={uploadedImage}
           decalVisible={decalVisible}
+          hasPlacement={surfacePlacement !== null}
           decalRotation={decalRotation}
           decalScale={decalScale}
           decalColor={decalColor}
@@ -875,7 +1138,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
           onDecalVisibleChange={setDecalVisible}
           onDecalReset={handleResetDecal}
           photoMode={photoMode}
-          setPhotoMode={setPhotoMode}
+          setPhotoMode={handlePhotoModeChange}
           cameraPreset={cameraPreset}
           onCameraPresetChange={(preset) => handleCameraPresetChange(preset as CameraPresetKey)}
           CAMERA_PRESETS={CAMERA_PRESETS}
@@ -887,7 +1150,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
 
       {/* Export Modal */}
       {showExportModal && (
-        <div className="modal-overlay" role="dialog" aria-labelledby="export-title">
+        <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="export-title">
           <div className="modal-card">
             <div className="render-history-header">
               <h2 id="export-title">Export image</h2>
@@ -900,13 +1163,13 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
               </button>
             </div>
             <label className="modal-label" htmlFor="export-preset">
-              Format
+              Format for both exports
             </label>
             <select
               id="export-preset"
               className="modal-select"
               value={exportPreset}
-              onChange={(e) => setExportPreset(e.target.value)}
+              onChange={(e) => setExportPreset(e.target.value as ExportPreset)}
             >
               {Object.entries(EXPORT_PRESETS).map(([key, preset]) => (
                 <option key={key} value={key}>
@@ -922,7 +1185,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
                   checked={watermarkEnabled}
                   onChange={(e) => setWatermarkEnabled(e.target.checked)}
                 />
-                Add watermark
+                Add watermark to canvas image
               </label>
               {watermarkEnabled && (
                 <input
@@ -935,6 +1198,8 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
                 />
               )}
             </div>
+            {exportError && <p className="editor-feedback-error" role="alert">{exportError}</p>}
+            {historyWarning && <p className="editor-feedback-warning" role="status">{historyWarning}</p>}
             <div className="modal-actions">
               <button type="button" className="btn-modal-cancel" onClick={() => setShowExportModal(false)}>
                 Cancel
@@ -943,9 +1208,9 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
                 type="button"
                 className="btn-modal-primary"
                 onClick={exportImage}
-                disabled={isExporting || !threeRenderer || !threeScene || !threeCamera}
+                disabled={isExporting || modelLoading || !threeRenderer || !threeScene || !threeCamera}
               >
-                {isExporting ? 'Exporting…' : !threeRenderer || !threeScene || !threeCamera ? 'Loading…' : 'Export'}
+                {isExporting ? 'Exporting…' : modelLoading || !threeRenderer || !threeScene || !threeCamera ? 'Loading…' : 'Download canvas image'}
               </button>
             </div>
 
@@ -1017,9 +1282,10 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
               </div>
             )}
 
+            <p className="modal-blender-hint">Blender uses the selected format and visible tattoo state. Preview output is limited to 512px; final output uses the full format size. Your studio backdrop and custom lights are included. Simple gradients use their first color in Blender. Watermarks apply only to canvas images.</p>
             <h3 className="modal-blender-title">Export for Blender</h3>
             <p className="modal-blender-desc">
-              Download scene data and the Blender script to render this view in Blender (Cycles) for high-quality output.
+              Download the scene and tattoo files. The importer script is available separately below.
             </p>
             <div className="modal-blender-actions">
               <button
@@ -1039,9 +1305,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
               </a>
             </div>
             <p className="modal-blender-hint">
-              Place <code>contract.json</code>, <code>ink.png</code>, and your body mesh in{' '}
-              <code>smartink-live/</code>, then run:{' '}
-              <code>blender --background --python smartink-live/sceneImporter.py -- contract.json</code>
+              Put the downloaded files in your existing Blender project folder alongside its importer and body assets.
             </p>
 
             {getRenderTargetLabel() === 'local' && (
@@ -1049,9 +1313,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
                 <div className="modal-blender-divider" />
                 <h3 className="modal-blender-title">Live Blender preview</h3>
                 <p className="modal-blender-desc">
-                  Push <code>contract.json</code> + <code>ink.png</code> to{' '}
-                  <code>smartink-live/</code> (synced with <code>~/smartink-live</code>), then run{' '}
-                  <code>watch_dev.py</code> from that folder — no Cycles render, scene rebuilds in the GUI in ~1s.
+                  Update the scene in your open Blender live preview. The local watcher needs to be running.
                 </p>
                 <div className="modal-blender-actions">
                   <button
@@ -1096,7 +1358,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
             )}
 
             <div className="modal-blender-divider" />
-            <h3 className="modal-blender-title">Cloud Render (Cycles)</h3>
+            <h3 className="modal-blender-title">Blender render</h3>
             <p className="modal-blender-desc">
               Render with Blender Cycles ({getRenderTargetLabel()} server).
               {qualityTier === 'preview'
@@ -1112,10 +1374,10 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
                     height: 8,
                     borderRadius: '50%',
                     marginRight: 6,
-                    background: renderServerOnline ? '#22c55e' : '#ef4444',
+                    background: renderServer?.ready ? '#22c55e' : '#ef4444',
                   }}
                 />
-                Render server: {getRenderTargetLabel()} — {renderServerOnline ? 'online' : 'offline'}
+                {renderServer?.message ?? 'Checking Blender…'}
               </p>
             )}
             <div className="modal-blender-actions">
@@ -1123,14 +1385,15 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
                 type="button"
                 className="btn-modal-blender"
                 onClick={handleCloudRender}
-                disabled={cloudRenderStatus === 'uploading' || cloudRenderStatus === 'rendering'}
+                disabled={renderBusy || renderServer?.ready === false}
               >
-                {cloudRenderStatus === 'uploading' || cloudRenderStatus === 'rendering'
+                {renderBusy
                   ? cloudRenderMessage || 'Rendering...'
                   : cloudRenderStatus === 'done'
                     ? 'Render Again'
-                    : 'Render in Cloud'}
+                    : 'Render with Blender'}
               </button>
+              {renderBusy && <button type="button" className="btn-modal-cancel" onClick={() => renderController.current?.abort()}>{renderServer?.cancellationSupported ? 'Cancel render' : 'Stop waiting'}</button>}
               {cloudRenderImage && (
                 <a
                   href={cloudRenderImage}
@@ -1141,6 +1404,8 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
                 </a>
               )}
             </div>
+            {renderBusy && <p className="modal-blender-hint" role="status">Rendering · {renderElapsed}s elapsed. You can keep this dialog open or return to editing.</p>}
+            {cloudRenderStatus === 'cancelled' && <p className="modal-blender-hint" role="status">{cloudRenderMessage}</p>}
             {cloudRenderStatus === 'error' && (
               <p style={{ color: 'var(--red-500, #ef4444)', fontSize: '13px', marginTop: '8px' }}>
                 {cloudRenderMessage}
@@ -1166,7 +1431,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
         </div>
       )}
 
-      {shapeMenu && (
+      {shapeMenu && !photoMode && (
         <RadialShapeMenu
           region={shapeMenu.region}
           x={shapeMenu.x}
@@ -1185,4 +1450,3 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
     </div>
   )
 }
-

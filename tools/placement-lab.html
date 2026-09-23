@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><title>Tattoo placement visual lab</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#151a21;color:#e9eef5;font:14px system-ui}header{padding:18px 22px;border-bottom:1px solid #35404e}h1{font-size:22px;margin:0 0 6px}p{margin:5px 0;color:#afbccc}.controls{display:flex;flex-wrap:wrap;gap:14px;padding:16px 22px;align-items:end}label{display:flex;flex-direction:column;gap:5px;font-size:12px}select,button,input{background:#242f3c;color:#fff;border:1px solid #4e6176;border-radius:5px;padding:8px}button{cursor:pointer}button:hover{background:#354c65}.toggle{flex-direction:row;align-items:center;padding-bottom:8px}#viewport{height:540px;width:100%;position:relative}.labels{display:flex;width:100%;text-align:center}.labels div{width:33.33%;padding:10px;background:#242e39;border-right:1px solid #384451}#metrics{white-space:pre-wrap;max-height:180px;overflow:auto;padding:14px 22px;color:#c4d6e6;font:12px ui-monospace,monospace}#status{padding:8px 22px;color:#b7e1c7}.sheet{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px;padding:20px}.card{background:#202a35;border:1px solid #354759;border-radius:8px;overflow:hidden}.card img{width:100%;display:block}.card p{padding:4px 10px;font-size:12px}.card .warning{color:#ffcda3}#suiteSummary{padding:10px 22px;white-space:pre-wrap}#download{display:none;margin:0 22px;color:#b9dcff}canvas{display:block}details{padding:10px 22px}details p{line-height:1.5}#error{color:#ffb3ac;white-space:pre-wrap;padding:10px 22px}
+</style></head><body>
+<header><h1>Tattoo placement visual lab</h1><p>Actual production meshes · identical anchor and design · compare the atlas, planar projection and surface chart</p></header>
+<div class="controls">
+<label>Model<select id="model"><option value="male">Male</option><option value="female">Female</option></select></label>
+<label>Placement case<select id="scenario"></select></label>
+<label>Rotation<select id="rotation"><option>0</option><option>45</option><option>90</option><option>180</option><option>270</option></select></label>
+<label>Requested size<select id="size"><option value="0.12">Small · 0.12</option><option value="0.4" selected>Medium · 0.40</option><option value="0.8">Large · 0.80</option><option value="1.2">Extreme · 1.20</option></select></label>
+<label>Artwork aspect<select id="aspect"><option value="1">Square</option><option value="0.45">Tall rectangle</option><option value="2.2">Wide rectangle</option></select></label>
+<label>Artwork<select id="design"><option value="grid">Diagnostic grid</option><option value="arrow">Asymmetric arrow / text</option></select></label>
+<label class="toggle"><input id="safe" type="checkbox" checked/>Apply safe size limit</label>
+<label class="toggle"><input id="seam" type="checkbox"/>Snap anchor onto nearest UV seam</label>
+<button id="overview">Full body</button><button id="closeup">Close up</button><button id="suite">Run visual edge-case suite</button>
+</div>
+<div class="labels"><div>Surface chart — proposed</div><div>Original atlas UV</div><div>Planar projection</div></div>
+<div id="viewport"></div><div id="status">Loading model…</div><div id="metrics"></div><div id="error"></div>
+<details><summary>How to inspect this test</summary><p>Click a body panel to move the anchor. A seamless chart keeps the grid continuous when it crosses an atlas split. A non-warping chart keeps grid squares and text consistent on the surface. A planar projection becomes stretched as the surface turns away; its mirrored copy can appear on another side. The suite records real rendered thumbnails plus numerical continuity and edge-stretch checks. A low safe size on a tight bend is intentional.</p></details>
+<div id="suiteSummary"></div><a id="download">Download full results</a><div id="sheet" class="sheet"></div>
+<script type="module" src="/tools/placement-lab.ts"></script></body></html>

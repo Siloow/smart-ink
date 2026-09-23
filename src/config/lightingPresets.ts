@@ -27,7 +27,7 @@ function norm(scale: number, raw: number): number {
 /** Canonical lighting presets: positions/colors/types match former CinematicLights.tsx; intensities 0–1 relative within preset. */
 export const LIGHTING_PRESETS: Record<LightingPresetKey, LightingPreset> = {
   studio: {
-    name: 'Studio (3-point)',
+    name: 'Soft portrait',
     threeIntensityScale: 1.1,
     lights: [
       {
@@ -67,7 +67,7 @@ export const LIGHTING_PRESETS: Record<LightingPresetKey, LightingPreset> = {
     ],
   },
   softboxLeft: {
-    name: 'Softbox Left',
+    name: 'Softbox left',
     threeIntensityScale: 1.4,
     lights: [
       {
@@ -98,7 +98,7 @@ export const LIGHTING_PRESETS: Record<LightingPresetKey, LightingPreset> = {
     ],
   },
   softboxRight: {
-    name: 'Softbox Right',
+    name: 'Softbox right',
     threeIntensityScale: 1.4,
     lights: [
       {
@@ -129,7 +129,7 @@ export const LIGHTING_PRESETS: Record<LightingPresetKey, LightingPreset> = {
     ],
   },
   backlight: {
-    name: 'Backlight',
+    name: 'Rim portrait',
     threeIntensityScale: 1.6,
     lights: [
       {
@@ -160,7 +160,7 @@ export const LIGHTING_PRESETS: Record<LightingPresetKey, LightingPreset> = {
     ],
   },
   dramatic: {
-    name: 'Dramatic',
+    name: 'Editorial',
     threeIntensityScale: 2,
     lights: [
       {
@@ -192,7 +192,7 @@ export const LIGHTING_PRESETS: Record<LightingPresetKey, LightingPreset> = {
     ],
   },
   sunset: {
-    name: 'Sunset',
+    name: 'Warm gels',
     threeIntensityScale: 1.2,
     lights: [
       {
@@ -225,9 +225,13 @@ export const LIGHTING_PRESETS: Record<LightingPresetKey, LightingPreset> = {
 };
 
 export function resolveRig(preset: LightingPresetKey): LightDefinition[] {
+  let source = 0;
   return LIGHTING_PRESETS[preset].lights.map((l) => ({
     ...l,
+    name: l.name ?? (l.type === 'ambient' ? 'Room fill' : ['Key softbox', 'Fill softbox', 'Rim softbox'][source++] ?? 'Softbox'),
+    enabled: l.enabled ?? true,
     position: [...l.position] as [number, number, number],
     target: l.target ? ([...l.target] as [number, number, number]) : undefined,
+    blenderAreaSize: l.blenderAreaSize ? [...l.blenderAreaSize] : undefined,
   }));
 }

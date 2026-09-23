@@ -1,8 +1,13 @@
+import type { BodyAppearance } from './bodyAppearance';
+import type { StudioSettings } from './studioSettings';
 export const RENDER_SCHEMA_VERSION = 1;
 
 export type QualityTier = 'preview' | 'final';
 
 export interface ContractLight {
+  enabled?: boolean;
+  name?: string;
+  softness?: number;
   type: 'ambient' | 'directional' | 'spot' | 'point' | 'area';
   position: [number, number, number];
   target?: [number, number, number];
@@ -16,9 +21,15 @@ export interface ContractLight {
 
 export interface RenderContract {
   schemaVersion: number;
+  renderStyle?: 'cinematic' | 'preview';
   bodyMeshId: string;
   skinToneId: string;
   poseId: string;
+  /** Explicit joint angles in degrees. Takes precedence over the preset id. */
+  bodyPose?: Record<string, number>;
+  /** Garment and scalp-hair choices. Missing keeps legacy render behavior. */
+  bodyAppearance?: Partial<BodyAppearance>;
+  studio?: Partial<StudioSettings>;
   lookId: string;
   /**
    * Sims-style shape sliders, each in [-1, 1]. Omitted when every value is 0.
@@ -27,7 +38,7 @@ export interface RenderContract {
   bodyShape?: Record<string, number>;
   /**
    * Region to cut out ('head', 'torso', 'armLeft', …). Omitted for the whole
-   * figure. sceneImporter.py deletes everything else before rendering.
+   * figure. The signed region field hides all other skin in both renderers.
    */
   bodyRegion?: string;
   lighting?: {
@@ -44,6 +55,12 @@ export interface RenderContract {
   eyeColor?: string;
   /** Hair colour: 'black' | 'dark_brown' | 'brown' | 'auburn' | 'blond' | 'grey'. */
   hairTone?: string;
+  /**
+   * Body hair coverage in the cinematic render: 'none' | 'vellus' | 'light' | 'medium' | 'heavy'.
+   * Vellus (the fine fuzz on all skin) is present at every level but 'none'; the level scales the
+   * visible terminal hair on the limbs and torso. Defaults per body: male 'medium', female 'vellus'.
+   */
+  bodyHair?: string;
   camera: {
     position: [number, number, number];
     target: [number, number, number];
@@ -51,6 +68,8 @@ export interface RenderContract {
     aspect: number;
     /** Portrait lens the cinematic render dollies back to, in mm. Defaults to 85. */
     lensMm?: number;
+    /** Preserve the exact viewport camera rather than dollying to a portrait lens. */
+    preserveFraming?: boolean;
     /** f-stop for the cinematic render's depth of field. Defaults to 2.8. */
     aperture?: number;
     /** Focus distance override; by default focus is pulled to the tattoo itself. */

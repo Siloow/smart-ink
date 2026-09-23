@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BODY_SHAPE_PARAMS,
+  BODY_SHAPE_LIMITS,
+  clampShapeValue,
   formatShapeValue,
   type BodyShape,
   type BodyShapeKey,
@@ -25,7 +27,7 @@ const PICK_OUTER = 98;
 const RING_INNER = 44;
 const RING_OUTER = 98;
 const LABEL_RADIUS = 71;
-/** Drag distance that covers the full -1..+1 range. */
+/** Drag distance that covers a control's full allowed range. */
 const RANGE_PX = 210;
 const BOX = 300;
 /** Keeps the wheel on screen when the press lands near an edge. */
@@ -78,6 +80,7 @@ export default function RadialShapeMenu({
   const armRef = useRef<{ key: BodyShapeKey; startValue: number; startT: number } | null>(null);
   /** Every value touched while the wheel is open, for Escape. */
   const originalRef = useRef<Partial<Record<BodyShapeKey, number>>>({});
+  const closedRef = useRef(false);
   const shapeRef = useRef(shape);
   shapeRef.current = shape;
 
@@ -95,8 +98,10 @@ export default function RadialShapeMenu({
   }, [params]);
 
   const cancel = useCallback(() => {
+    if (closedRef.current) return;
+    closedRef.current = true;
     for (const [key, value] of Object.entries(originalRef.current)) {
-      onChange(key as BodyShapeKey, value as number);
+      onChange(key as BodyShapeKey, clampShapeValue(key as BodyShapeKey, value as number));
     }
     originalRef.current = {};
     onClose();
@@ -104,7 +109,7 @@ export default function RadialShapeMenu({
 
   useEffect(() => {
     const onMove = (e: PointerEvent) => {
-      if (e.pointerId !== pointerId) return;
+      if (closedRef.current || e.pointerId !== pointerId) return;
       const dx = e.clientX - center.x;
       const dy = e.clientY - center.y;
       const radius = Math.hypot(dx, dy);
@@ -120,7 +125,7 @@ export default function RadialShapeMenu({
       if ((!current || current.key !== key) && canRepick) {
         const dir = index * step;
         const t = dx * Math.sin(dir) + dy * -Math.cos(dir);
-        const startValue = shapeRef.current[key];
+        const startValue = clampShapeValue(key, shapeRef.current[key]);
         if (!(key in originalRef.current)) originalRef.current[key] = startValue;
         armRef.current = { key, startValue, startT: t };
         setArmed(key);
@@ -130,18 +135,23 @@ export default function RadialShapeMenu({
 
       const dir = params.indexOf(armRef.current.key) * step;
       const t = dx * Math.sin(dir) + dy * -Math.cos(dir);
-      const next = clamp(
-        armRef.current.startValue + ((t - armRef.current.startT) / RANGE_PX) * 2,
-        -1,
-        1
+      const { min, max } = BODY_SHAPE_LIMITS[armRef.current.key];
+      const next = clampShapeValue(
+        armRef.current.key,
+        armRef.current.startValue + ((t - armRef.current.startT) / RANGE_PX) * (max - min)
       );
       onChange(armRef.current.key, next);
     };
 
     const onUp = (e: PointerEvent) => {
-      if (e.pointerId !== pointerId) return;
+      if (closedRef.current || e.pointerId !== pointerId) return;
+      closedRef.current = true;
       originalRef.current = {};
       onClose();
+    };
+
+    const onPointerCancel = (e: PointerEvent) => {
+      if (e.pointerId === pointerId) cancel();
     };
 
     const onKey = (e: KeyboardEvent) => {
@@ -153,10 +163,14 @@ export default function RadialShapeMenu({
 
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onPointerCancel);
+    window.addEventListener('blur', cancel);
     window.addEventListener('keydown', onKey);
     return () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onPointerCancel);
+      window.removeEventListener('blur', cancel);
       window.removeEventListener('keydown', onKey);
     };
   }, [center, params, step, pointerId, onChange, onClose, cancel]);
@@ -177,7 +191,7 @@ export default function RadialShapeMenu({
           const a = i * step;
           const pad = 0.035;
           const isArmed = key === armed;
-          const value = shape[key];
+          const value = clampShapeValue(key, shape[key]);
           return (
             <g key={key} className={`radial-seg${isArmed ? ' radial-seg--armed' : ''}`}>
               <path d={sectorPath(RING_INNER, RING_OUTER, a - step / 2 + pad, a + step / 2 - pad)} />
@@ -207,7 +221,7 @@ export default function RadialShapeMenu({
               {armedLabel}
             </text>
             <text className="radial-hub-value" x="0" y="12" dy="0.32em">
-              {formatShapeValue(shape[armed as BodyShapeKey])}
+              {formatShapeValue(clampShapeValue(armed as BodyShapeKey, shape[armed as BodyShapeKey]))}
             </text>
           </>
         ) : (
@@ -221,6 +235,10 @@ export default function RadialShapeMenu({
           </>
         )}
       </svg>
+      <p className="radial-menu-help">
+        {armed ? `Less ${formatShapeValue(BODY_SHAPE_LIMITS[armed].min)} · More ${formatShapeValue(BODY_SHAPE_LIMITS[armed].max)} · Adjustment strength` : 'Drag toward a control to adjust'}
+        <span>Release to apply · Esc to cancel</span>
+      </p>
     </div>
   );
 }

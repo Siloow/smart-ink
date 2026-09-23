@@ -116,8 +116,8 @@ body {
   width: 24px;
   height: 24px;
   flex-shrink: 0;
-  border-radius: 50%;
-  background: conic-gradient(from 0deg, #ff4da6, #ffaa00, #00ff99, #4d7cff, #ff4da6);
+  border-radius: 0;
+  background: url('/brand-droplet.svg') center / contain no-repeat;
 }
 
 .landing-mark--sm {
@@ -227,6 +227,19 @@ body {
   max-width: var(--measure);
   margin: 0 auto;
   padding: 76px var(--gutter) 92px;
+  min-height: 740px;
+  isolation: isolate;
+}
+
+/* Keep the copy and form above the arm where their silhouettes overlap. */
+.hero-copy {
+  position: relative;
+  z-index: 2;
+}
+
+.hero-copy h1,
+.hero-copy .hero-lead {
+  text-shadow: 0 2px 22px var(--bg-primary);
 }
 
 .hero-badge {
@@ -282,15 +295,19 @@ body {
   opacity: 0.75;
 }
 
+/* A full-bleed scene, slightly tucked beneath the right edge of the copy. */
 .hero-figure {
-  position: relative;
-  padding: 14px;
-  border: 1px solid var(--hairline-strong);
-  border-radius: 18px;
-  background: linear-gradient(160deg, var(--surface-raised), var(--surface) 85%);
-  box-shadow:
-    0 44px 90px -52px rgba(0, 0, 0, 0.95),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  position: absolute;
+  z-index: 0;
+  width: 74%;
+  left: 28%;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 /* The figures fade their cropped edges into --bg-primary, so the surface behind
@@ -303,7 +320,7 @@ body {
 }
 
 .hero-figure .pipe-figure {
-  border-radius: 12px;
+  border-radius: 0;
 }
 
 /* — Live 3D hero preview — */
@@ -311,8 +328,8 @@ body {
   position: relative;
   aspect-ratio: 14 / 13;
   overflow: hidden;
-  border-radius: 12px;
-  background: var(--bg-primary);
+  border-radius: 0;
+  background: transparent;
   touch-action: pan-y;
 }
 
@@ -341,66 +358,19 @@ body {
   inset: 0;
 }
 
-/* Matches the drawn figures: the cropped limb fades into the frame. */
-.hero-preview::before,
-.hero-preview::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  pointer-events: none;
-  z-index: 1;
-}
-
-.hero-preview::before {
-  top: 0;
-  height: 18%;
-  background: linear-gradient(to bottom, var(--bg-primary) 10%, transparent);
-}
-
-/*
- * Lighter than the top fade: the limb ends in a hand here rather than being cut
- * off mid-shaft, so there is a real subject to keep out of the gradient.
- */
-.hero-preview::after {
-  bottom: 0;
-  height: 15%;
-  background: linear-gradient(to top, var(--bg-primary) 22%, transparent);
-}
-
-/*
- * Depth of field, without a second render pass: the crop edges are blurred
- * through the mask's ramp, leaving the middle of the frame — where the design
- * sits — in focus. The labels sit above this layer, so they stay sharp.
- */
-.hero-preview-defocus {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  pointer-events: none;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  mask-image: linear-gradient(
-    to bottom,
-    #000 0%,
-    transparent 22%,
-    transparent 74%,
-    #000 100%
-  );
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    #000 0%,
-    transparent 22%,
-    transparent 74%,
-    #000 100%
-  );
+/* Fade the actual scene, not the annotations: no rectangular canvas edge
+   against the page atmosphere, while the split and instructions stay crisp. */
+.hero-preview-canvas,
+.hero-preview-fallback {
+  -webkit-mask-image: radial-gradient(ellipse 70% 66% at 54% 50%, #000 44%, transparent 76%);
+  mask-image: radial-gradient(ellipse 70% 66% at 54% 50%, #000 44%, transparent 76%);
 }
 
 .hero-preview-divider {
   position: absolute;
-  top: 10%;
-  bottom: 17%;
-  left: 50%;
+  top: 16%;
+  bottom: 24%;
+  left: var(--hero-split, 50%);
   width: 1px;
   z-index: 2;
   pointer-events: none;
@@ -423,20 +393,20 @@ body {
 }
 
 .hero-preview-label {
-  bottom: 6%;
+  bottom: 19%;
 }
 
 .hero-preview-label--mesh {
-  right: 52%;
+  right: calc(100% - var(--hero-split, 50%) + 2%);
 }
 
 .hero-preview-label--render {
-  left: 52%;
+  left: calc(var(--hero-split, 50%) + 2%);
 }
 
 .hero-preview-hint {
-  top: 5%;
-  left: 50%;
+  top: 12%;
+  left: var(--hero-split, 50%);
   transform: translateX(-50%);
   opacity: 0.75;
   white-space: nowrap;
@@ -701,10 +671,17 @@ body {
     gap: 44px;
     padding-top: 56px;
     padding-bottom: 64px;
+    min-height: 0;
   }
 
   .hero-figure {
+    position: relative;
     order: -1;
+    width: 112%;
+    left: auto;
+    top: auto;
+    margin-inline: -6%;
+    transform: none;
   }
 
   .hero-lead,
@@ -756,8 +733,8 @@ body {
 .nav-logo {
   width: 36px;
   height: 36px;
-  border-radius: 50%;
-  background: conic-gradient(from 0deg, #ff4da6, #ffaa00, #00ff99, #4d7cff, #ff4da6);
+  border-radius: 0;
+  background: url('/brand-droplet.svg') center / contain no-repeat;
   flex-shrink: 0;
 }
 
@@ -1611,8 +1588,8 @@ body {
 .login-logo {
   width: 64px;
   height: 64px;
-  border-radius: 50%;
-  background: conic-gradient(from 0deg, #ff4da6, #ffaa00, #00ff99, #4d7cff, #ff4da6);
+  border-radius: 0;
+  background: url('/brand-droplet.svg') center / contain no-repeat;
   margin: 0 auto 24px;
   box-shadow: 0 0 40px rgba(77, 124, 255, 0.2), 0 0 80px rgba(255, 77, 166, 0.1);
 }
@@ -3118,6 +3095,26 @@ button.editor-toolbar-avatar {
   pointer-events: none;
   user-select: none;
   animation: radial-in 90ms ease-out;
+}
+
+.radial-menu-help {
+  position: absolute;
+  top: 255px;
+  left: 0;
+  width: 300px;
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(20, 22, 30, 0.94);
+  color: #d4d9e5;
+  text-align: center;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.radial-menu-help span {
+  display: block;
+  color: #adb7c9;
 }
 
 @keyframes radial-in {

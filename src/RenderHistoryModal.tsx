@@ -38,6 +38,8 @@ export default function RenderHistoryModal({ onClose }: RenderHistoryModalProps)
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [imageWarning, setImageWarning] = useState('');
+  const [mutating, setMutating] = useState(false);
   const [share, setShare] = useState<{ id: string; text: string; url?: string } | null>(null);
   const [sharing, setSharing] = useState(false);
   const shareable = canShareRenders();
@@ -73,18 +75,13 @@ export default function RenderHistoryModal({ onClose }: RenderHistoryModalProps)
     try {
       const list = await listRenderHistory();
       setEntries(list);
-      if (list.length > 0 && (!selectedId || !list.some((e) => e.id === selectedId))) {
-        setSelectedId(list[0].id);
-      }
-      if (list.length === 0) {
-        setSelectedId(null);
-      }
+      setSelectedId((previous) => list.some((entry) => entry.id === previous) ? previous : list[0]?.id ?? null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load render history');
     } finally {
       setLoading(false);
     }
-  }, [selectedId]);
+  }, []);
 
   useEffect(() => {
     void refresh();
@@ -95,15 +92,17 @@ export default function RenderHistoryModal({ onClose }: RenderHistoryModalProps)
     const urls: Record<string, string> = {};
 
     void (async () => {
-      await Promise.all(
+      const results = await Promise.allSettled(
         entries.map(async (entry) => {
           const blob = await getRenderImageBlob(entry.id);
-          if (blob && !cancelled) {
+          if (!blob) throw new Error('This saved image is unavailable.');
+          if (!cancelled) {
             urls[entry.id] = URL.createObjectURL(blob);
           }
         })
       );
       if (!cancelled) {
+        setImageWarning(results.some((result) => result.status === 'rejected') ? 'Some images could not be loaded. The other renders are still available.' : '');
         setThumbUrls((prev) => {
           Object.values(prev).forEach((url) => URL.revokeObjectURL(url));
           return urls;
@@ -129,18 +128,19 @@ export default function RenderHistoryModal({ onClose }: RenderHistoryModalProps)
   const selectedUrl = selected ? thumbUrls[selected.id] : null;
 
   const handleDelete = async (id: string) => {
-    await deleteRenderHistory(id);
-    await refresh();
+    if (mutating || !window.confirm('Delete this saved render?')) return;
+    setMutating(true);
+    try { await deleteRenderHistory(id); await refresh(); }
+    catch (e) { setImageWarning(e instanceof Error ? e.message : 'Could not delete this render. Please retry.'); }
+    finally { setMutating(false); }
   };
 
   const handleClearAll = async () => {
-    if (!window.confirm('Delete all saved renders? This cannot be undone.')) return;
-    await clearRenderHistory();
-    setThumbUrls((prev) => {
-      Object.values(prev).forEach((url) => URL.revokeObjectURL(url));
-      return {};
-    });
-    await refresh();
+    if (mutating || !window.confirm('Delete all saved renders? This cannot be undone.')) return;
+    setMutating(true);
+    try { await clearRenderHistory(); await refresh(); }
+    catch (e) { setImageWarning(e instanceof Error ? e.message : 'Could not clear history. Please retry.'); }
+    finally { setMutating(false); }
   };
 
   const handleDownload = (entry: RenderHistoryEntry) => {
@@ -155,7 +155,7 @@ export default function RenderHistoryModal({ onClose }: RenderHistoryModalProps)
   };
 
   return (
-    <div className="modal-overlay render-history-overlay" role="dialog" aria-labelledby="render-history-title">
+    <div className="modal-overlay render-history-overlay" role="dialog" aria-modal="true" aria-labelledby="render-history-title">
       <div className="modal-card render-history-card">
         <div className="render-history-header">
           <h2 id="render-history-title">Render history</h2>
@@ -170,7 +170,8 @@ export default function RenderHistoryModal({ onClose }: RenderHistoryModalProps)
         </p>
 
         {loading && <p className="render-history-empty">Loading…</p>}
-        {error && <p className="render-history-error">{error}</p>}
+        {error && <p className="render-history-error" role="alert">{error} <button type="button" onClick={() => void refresh()}>Retry</button></p>}
+        {imageWarning && <p className="editor-feedback-warning" role="status">{imageWarning} <button type="button" onClick={() => void refresh()}>Reload images</button></p>}
         {!loading && !error && entries.length === 0 && (
           <p className="render-history-empty">No renders yet. Export an image or run a Cycles render to build history.</p>
         )}
@@ -203,6 +204,7 @@ export default function RenderHistoryModal({ onClose }: RenderHistoryModalProps)
                   <button
                     type="button"
                     className="btn-modal-cancel"
+                    disabled={mutating}
                     onClick={() => void handleDelete(selected.id)}
                   >
                     Delete
@@ -247,7 +249,8 @@ export default function RenderHistoryModal({ onClose }: RenderHistoryModalProps)
             </div>
 
             <div className="render-history-footer">
-              <button type="button" className="btn-modal-cancel" onClick={() => void handleClearAll()}>
+              <button type="button" className="btn-modal-cancel" disabled={mutating}
+                  onClick={() => void handleClearAll()}>
                 Clear all
               </button>
             </div>

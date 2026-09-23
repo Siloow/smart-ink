@@ -33,6 +33,10 @@ export interface TattooLight {
   target?: [number, number, number];
   intensity: number;
   color: string;
+  /** Missing fields preserve lights saved before the studio controls. */
+  enabled?: boolean;
+  name?: string;
+  softness?: number;
   castShadow?: boolean;
   angle?: number;
   penumbra?: number;

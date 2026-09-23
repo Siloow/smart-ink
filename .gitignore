@@ -48,3 +48,27 @@ src.zip
 # regenerated from it; the committed outputs are smartink-live/body_full*.blend
 # and public/models/body_*_realistic.*
 assets/
+smartink-live/realism-v2/
+
+# Generated body-shape comparisons and geometry audit data
+reports/body-shape/
+
+# Generated posing geometry and Blender comparison reports
+reports/body-pose/
+
+# Generated Focus isolation and camera verification reports
+reports/focus/
+
+# Generated clothing and hair inspection geometry/renders
+reports/clothing/
+reports/hair/
+reports/appearance/
+
+# Generated photo-studio lighting and backdrop checks
+reports/studio/
+
+# Generated scratch data
+__pycache__/
+*.pyc
+smartink-live/portfolio-v1/
+smartink-live/contract_smoke.json

@@ -473,6 +473,26 @@
   margin-bottom: 8px;
 }
 
+.shape-help {
+  margin: 0 0 10px;
+}
+
+.shape-bounds {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 5px;
+  color: var(--text-muted);
+  font-size: 0.6rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.shape-field-hint {
+  margin: 3px 0 10px;
+  color: var(--text-muted);
+  font-size: 0.65rem;
+  line-height: 1.4;
+}
+
 .shape-field-row {
   display: flex;
   align-items: baseline;
@@ -538,3 +558,275 @@
 .shape-range:focus-visible {
   box-shadow: 0 0 0 2px var(--shape-fill);
 }
+
+/* Placement feedback stays out of the picking surface. */
+.placement-help {
+  position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+  width: max-content; max-width: calc(100% - 40px); padding: 12px 18px;
+  border: 1px solid rgba(20, 24, 30, .1); border-radius: 12px;
+  background: rgba(255,255,255,.94); color: #333b48;
+  box-shadow: 0 4px 20px rgba(0,0,0,.06); pointer-events: none;
+  font-size: 12px; line-height: 1.5; z-index: 3;
+}
+.placement-help strong { display: block; font-size: 11px; color: #5262a2; margin-bottom: 2px; }
+
+
+/* Presentation and recovery stay available without competing with the model. */
+.editor-app-root { height: 100dvh; }
+.editor-left-panel { width: 170px; }
+.scene-save-status { color: var(--text-secondary); font-size: 12px; white-space: nowrap; }
+.scene-save-status--error { color: #ffb3aa; }
+.editor-notice, .editor-feedback-error, .editor-feedback-warning {
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.editor-notice, .editor-feedback-error { color: #ffcec8; background: #5b272b; }
+.editor-feedback-warning { color: #ffe0a0; background: #443a26; }
+.editor-notice { border-radius: 0; flex-shrink: 0; }
+.photo-mode-actions {
+  position: absolute; top: 16px; right: 16px; z-index: 90;
+  display: flex; gap: 8px; padding: 6px; border-radius: 12px;
+  background: rgba(20, 23, 31, .9); box-shadow: 0 4px 18px #0003;
+}
+.editor-app-root--photo > .editor-toolbar,
+.editor-app-root--photo .editor-left-panel,
+.editor-app-root--photo .editor-right-panel { display: none; }
+.editor-app-root--photo .editor-canvas-host { flex: 1; }
+
+@media (max-width: 1100px) {
+  .editor-left-panel { display: none; }
+  .editor-right-panel { width: 280px; }
+  .editor-toolbar-brand { font-size: 14px; }
+  .editor-toolbar-actions { gap: 6px; }
+}
+@media (max-width: 700px) {
+  .editor-toolbar--main { flex-wrap: wrap; gap: 8px; padding: 8px; }
+  .editor-toolbar-actions { overflow-x: auto; justify-content: flex-start; max-width: 100%; }
+  .editor-body-row { flex-direction: column; }
+  .editor-canvas-host { min-height: 35vh; }
+  .editor-right-panel { width: 100%; max-height: 42vh; border-left: 0; border-top: 1px solid var(--ep-border); }
+  .editor-app-root--photo .editor-canvas-host { min-height: 0; }
+  .placement-help { max-width: calc(100% - 24px); font-size: 12px; }
+}
+
+.ep-upload-error { margin: 0; color: #ffb8ae; font-size: 12px; line-height: 1.5; }
+
+/* Presets stay visible; detailed posing occupies one body-part group at a time. */
+.pose-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.pose-heading .ep-section-label { margin-bottom: 8px; }
+.pose-presets { margin-bottom: 10px; }
+.pose-adjustments { border-top: 1px solid var(--border-subtle, #2c303a); padding-top: 8px; }
+.pose-adjustments summary { cursor: pointer; font-size: .75rem; padding: 3px 0 8px; }
+.pose-adjustments > .ep-hint { margin: 0 0 8px; }
+.pose-parts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; margin-bottom: 8px; }
+.pose-link { display: flex; align-items: center; gap: 6px; font-size: .7rem; margin: 8px 0 12px; cursor: pointer; }
+.pose-link input { accent-color: var(--shape-fill, #b1c8ff); }
+.pose-actions { display: flex; gap: 6px; margin-top: 10px; }
+.pose-actions .ep-btn { flex: 1; }
+
+.appearance-section > summary { cursor: pointer; padding: 3px 0; }
+.appearance-presets { margin: 10px 0; }
+.appearance-field { display: grid; gap: 6px; margin: 10px 0; }
+.appearance-swatches { display: flex; flex-wrap: wrap; gap: 8px; padding: 2px; }
+.appearance-swatch { width: 23px; height: 23px; border: 1px solid #ffffff40; border-radius: 50%; cursor: pointer; }
+.appearance-swatch[aria-pressed="true"] { outline: 2px solid var(--ep-accent, #7aa2ff); outline-offset: 2px; }
+.appearance-swatch:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+.appearance-hint { margin: 10px 0; line-height: 1.5; }
+
+/* Inspector workflow: fixed tabs with an independently scrolling panel. */
+.editor-app-root { --text-secondary: #a5a5b4; --text-muted: #898998; --ep-radius-md: 8px; }
+.editor-right-panel.ep-inspector { width: 320px; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.ep-inspector-header { flex-shrink: 0; padding: 16px 16px 0; gap: 6px; background: var(--bg-sidebar); border-bottom: 1px solid var(--ep-border); }
+.ep-inspector-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-top: 9px; padding-bottom: 10px; }
+.ep-inspector-tab { min-height: 36px; padding: 8px; font: inherit; font-size: 12px; font-weight: 600; color: var(--text-secondary); border: 1px solid transparent; border-radius: 8px; background: transparent; cursor: pointer; }
+.ep-inspector-tab:hover { background: var(--ep-surface-hover); color: var(--text-primary); }
+.ep-inspector-tab[aria-selected="true"] { color: #fff; background: #4d7cff24; border-color: #4d7cff80; }
+.ep-inspector-panel { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; gap: 22px; }
+.ep-inspector-panel[hidden] { display: none; }
+.ep-inspector-panel > .ep-section + .ep-section { border-top: 1px solid var(--ep-border); padding-top: 18px; }
+.ep-inspector-panel:focus { outline: none; }
+.ep-artwork-heading, .ep-tattoo-actions { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.ep-tattoo-actions > .ep-btn { flex: 1; }
+.ep-tattoo-artwork .ep-image-preview { min-height: 120px; }
+.ep-placement-hint { padding: 10px 12px; border: 1px solid #4d7cff40; border-radius: 8px; color: #c6d4ff; background: #4d7cff12; font-size: 12px; line-height: 1.5; }
+.ep-hint { line-height: 1.5; margin: 0; }
+.ep-section-label { color: var(--text-secondary); }
+.ep-details { display: block; }
+.ep-details > summary { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 6px; min-height: 34px; padding: 8px 20px 8px 0; position: relative; cursor: pointer; list-style: none; font-size: 12px; font-weight: 500; color: var(--text-primary); }
+.ep-details > summary::-webkit-details-marker { display: none; }
+.ep-details > summary::after { content: ''; position: absolute; right: 3px; top: 13px; width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg); transition: transform .15s; }
+.ep-details[open] > summary::after { transform: rotate(225deg); top: 17px; }
+.ep-details-summary { color: var(--text-secondary); font-size: 11px; font-weight: 400; line-height: 1.5; }
+.appearance-section > summary { flex-direction: column; }
+.ep-details[open] > summary { margin-bottom: 10px; }
+.shape-adjustments { border-top: 1px solid var(--ep-border); padding-top: 6px; }
+.shape-group { margin-top: 12px; }
+.shape-group-label { margin-bottom: 8px; color: var(--text-secondary); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+.pose-adjustments { padding-top: 6px; }
+.pose-parts { gap: 6px; margin: 12px 0; }
+.pose-link { min-height: 32px; font-size: 12px; }
+.pose-heading .ep-section-label { margin: 0; }
+.pose-presets { margin-bottom: 0; }
+.appearance-swatch { width: 28px; height: 28px; }
+/* One scale for controls, including dialogs, without changing the public pages. */
+.editor-app-root :is(.ep-btn,.ep-pill,.region-chip,.tool-btn,.sl-text-button,.sl-reset-light,.sl-light-chip,.snapshot-button,.snapshot-camera-nudges button,.snapshot-camera-heading button) { min-height: 34px; border-radius: 8px; font-family: var(--font); font-size: 12px; font-weight: 500; line-height: 1.35; }
+.editor-app-root :is(.ep-pill,.region-chip) { padding: 7px 10px; }
+.editor-app-root :is(.ep-select,select) { min-height: 36px; font: inherit; font-size: 12px; border-radius: 8px; }
+.editor-app-root select option { color: var(--text-primary); background: var(--bg-card); }
+.editor-app-root :is(button,input,select,summary,a):focus-visible { outline: 2px solid #91adff; outline-offset: 3px; }
+.editor-app-root :is(button,input,select):disabled { opacity: .4; cursor: default; }
+.editor-app-root input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--ep-accent); }
+.editor-app-root input[type="color"] { min-height: 30px; border-radius: 8px; cursor: pointer; }
+.editor-app-root .ep-btn--primary { color: #fff; background: var(--ep-accent); border-color: var(--ep-accent); }
+.editor-app-root .ep-btn--primary:hover:not(:disabled) { background: #416be0; border-color: #416be0; }
+.editor-history-controls { display: inline-flex; gap: 4px; padding-right: 8px; border-right: 1px solid var(--ep-border); }
+.editor-history-controls .tool-btn { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; min-width: 34px; width: auto; padding: 8px 10px; gap: 7px; white-space: nowrap; }
+.editor-history-controls .tool-btn > svg { display: block; width: 13px; height: 13px; flex: 0 0 13px; }
+.editor-history-controls .tool-btn > span { line-height: 1; }
+@media (max-width: 1100px) { .editor-history-controls .tool-btn > span { display: none; } }
+/* View controls sit outside the captured image so framing stays exact. */
+.editor-app-root .editor-canvas-host { display: flex; flex-direction: column; min-height: 0; }
+.editor-canvas-stage { position: relative; flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
+.viewport-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; position: relative; flex-shrink: 0; padding: 10px 12px; border-bottom: 1px solid var(--ep-border); background: var(--bg-sidebar); color: var(--text-primary); z-index: 15; }
+.viewport-tools .ep-select { flex: 0 1 132px; width: auto; min-width: 112px; }
+.viewport-tools .viewport-button { padding: 7px 10px; white-space: nowrap; }
+.viewport-tools > label { display: flex; align-items: center; gap: 8px; color: var(--text-secondary); font-size: 12px; }
+.viewport-focus-status { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; width: 100%; font-size: 12px; color: #c6d4ff; }
+.viewport-focus-status .ep-btn { padding: 5px 9px; min-height: 30px; }
+.viewport-settings { position: relative; margin-left: auto; }
+.viewport-settings > summary { display: inline-flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer; list-style: none; }
+.viewport-settings > summary::-webkit-details-marker { display: none; }
+.viewport-settings > :not(summary) { position: absolute; right: 0; top: calc(100% + 8px); width: 220px; padding: 14px; border: 1px solid var(--ep-border); border-radius: 10px; background: var(--bg-card); box-shadow: 0 8px 32px #0005; font-size: 12px; }
+@media (max-width: 1100px) { .editor-right-panel.ep-inspector { width: 300px; } }
+@media (max-width: 700px) {
+  .editor-right-panel.ep-inspector { width: 100%; max-height: 46vh; }
+  .ep-inspector-header { padding: 10px 12px 0; }
+  .ep-inspector-header > .ep-hint { display: none; }
+  .ep-inspector-panel { padding: 12px; }
+  .viewport-tools { padding: 7px 8px; gap: 6px; }
+  .viewport-tools .ep-select { flex-basis: 115px; min-width: 100px; }
+  .editor-app-root .editor-canvas-stage { min-height: 26vh; }
+}
+@media (prefers-reduced-motion: reduce) { .editor-app-root *, .editor-app-root *::before, .editor-app-root *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; } }
+
+.editor-canvas-host { container-type: inline-size; container-name: editor-viewport; }
+.viewport-tools-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; width: 100%; min-width: 0; }
+.viewport-tools .viewport-field { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--text-secondary); }
+.viewport-tools .viewport-field > span { flex-shrink: 0; }
+.viewport-view-shortcuts { display: inline-flex; gap: 4px; }
+.viewport-tools .viewport-button[aria-pressed="true"] { color: #dce6ff; background: #4d7cff24; border-color: #4d7cff80; }
+.viewport-settings-panel label { display: flex; align-items: center; gap: 8px; }
+.viewport-settings-panel p { color: var(--text-secondary); line-height: 1.5; margin: 8px 0 0; font-size: 11px; }
+/* Neutral transparency paper keeps dark ink legible in the dark inspector. */
+.ep-tattoo-artwork .ep-preview {
+  min-height: 160px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #eeeae4;
+  background-image: conic-gradient(#ded9d2 25%, transparent 0 50%, #ded9d2 0 75%, transparent 0);
+  background-size: 20px 20px;
+  border-color: #ffffff24;
+}
+.ep-tattoo-artwork .ep-preview img { max-height: 144px; }
+.ep-tattoo-actions.ep-stack { align-items: stretch; }
+.editor-app-root :is(.btn-modal-primary,.btn-modal-cancel,.btn-modal-blender,.tool-btn-nav) { min-height: 36px; border-radius: 8px; font-family: var(--font); font-size: 12px; font-weight: 500; }
+.editor-app-root :is(.btn-modal-cancel,.btn-modal-blender--secondary) { border: 1px solid var(--ep-border); color: var(--text-secondary); background: var(--ep-surface); }
+.editor-app-root :is(.btn-modal-primary,.btn-modal-blender:not(.btn-modal-blender--secondary)) { border: 1px solid var(--ep-accent); color: #fff; background: var(--ep-accent); }
+.editor-app-root :is(.btn-modal-primary,.btn-modal-blender:not(.btn-modal-blender--secondary)):hover:not(:disabled) { background: #416be0; }
+.editor-app-root .modal-card :is(.modal-input,.modal-select) { border-radius: 8px; min-height: 36px; font-size: 12px; }
+@container editor-viewport (max-width: 920px) { .viewport-view-shortcuts { display: none; } }
+@container editor-viewport (max-width: 510px) { .viewport-tools-row { gap: 6px; } .viewport-tools .viewport-field { flex: 1 1 140px; } .viewport-tools .viewport-field .ep-select { flex: 1; } }
+
+/* Workspace navigation: quiet chrome, one primary creation action. */
+.editor-home-link { display: inline-flex; align-items: center; gap: 10px; border: 0; background: none; color: inherit; cursor: pointer; padding: 6px; white-space: nowrap; }
+.editor-scene-heading { display: flex; align-items: center; justify-content: flex-start; gap: 10px; min-width: 0; flex: 1; }
+.editor-scene-name { width: 190px; min-width: 70px; max-width: 100%; background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 7px 8px; color: var(--text-primary); font: inherit; font-size: 13px; text-overflow: ellipsis; }
+.editor-scene-name:hover { border-color: var(--ep-border); }
+.editor-scene-name:focus { border-color: var(--ep-accent); outline: 2px solid var(--ep-accent); outline-offset: 2px; }
+.tool-btn.tool-btn--primary { background: #8b5cf6; border-color: #8b5cf6; color: white; }
+.tool-btn.tool-btn--primary:hover:not(:disabled) { background: #9b73f7; }
+.editor-output { position: relative; }
+.editor-output-popover { position: absolute; top: calc(100% + 8px); right: 0; width: 270px; padding: 6px; border: 1px solid var(--ep-border); border-radius: 12px; background: var(--bg-sidebar); box-shadow: 0 12px 36px #0006; z-index: 120; }
+.editor-output-popover button { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px; border: 0; border-radius: 7px; background: transparent; color: var(--text-primary); text-align: left; cursor: pointer; font: inherit; font-size: 13px; }
+.editor-output-popover button:hover { background: var(--ep-surface-hover); }
+.editor-output-popover small { display: block; color: var(--text-secondary); font-size: 11px; margin-top: 4px; }
+.scene-navigation { width: 190px; flex-shrink: 0; padding: 12px 8px; }
+.scene-navigation--collapsed { width: 56px; }
+.scene-navigation-heading { display: flex; align-items: center; justify-content: space-between; min-height: 36px; padding: 0 6px; margin-bottom: 12px; color: var(--text-secondary); font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+.scene-icon-button { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 32px; flex-shrink: 0; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--text-secondary); cursor: pointer; }
+.scene-icon-button:hover { color: var(--text-primary); background: var(--ep-surface-hover); }
+.scene-navigation-row { display: flex; align-items: center; position: relative; margin-bottom: 5px; }
+.scene-navigation-item { display: flex; align-items: center; gap: 12px; width: 100%; min-width: 0; min-height: 54px; padding: 10px; border: 1px solid transparent; border-radius: 9px; background: transparent; color: var(--text-secondary); font: inherit; text-align: left; cursor: pointer; }
+.scene-navigation-item > svg { flex-shrink: 0; width: 16px; }
+.scene-navigation-item span { min-width: 0; }
+.scene-navigation-item strong { display: block; font-size: 12px; color: var(--text-primary); font-weight: 600; }
+.scene-navigation-item small { display: block; margin-top: 4px; font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scene-navigation-item:hover { background: var(--ep-surface-hover); }
+.scene-navigation-item[aria-current] { border-color: #8b5cf644; background: #8b5cf615; color: #bca0ff; }
+.scene-visibility { position: absolute; right: 4px; }
+.scene-navigation-row:has(.scene-visibility) .scene-navigation-item { padding-right: 34px; }
+.scene-navigation--collapsed .scene-navigation-heading { padding: 0; justify-content: center; }
+.scene-navigation--collapsed .scene-navigation-item { justify-content: center; padding: 10px 0; min-height: 42px; }
+.editor-home-link:focus-visible, .scene-icon-button:focus-visible, .scene-navigation-item:focus-visible, .editor-output button:focus-visible { outline: 2px solid #a78bfa; outline-offset: 2px; }
+@media (max-width: 1100px) { .scene-navigation { display: none; } .editor-scene-name { width: 145px; } }
+@media (max-width: 700px) {
+  .editor-scene-heading { flex: 1; }
+  .editor-toolbar--main .editor-toolbar-actions { width: 100%; overflow: visible; flex-wrap: wrap; }
+  .editor-output-popover { right: auto; left: 0; width: min(270px, 85vw); }
+}
+
+/* Floating Clean View actions use the same complete button styles as the inspector. */
+.photo-mode-actions{max-width:calc(100% - 32px);flex-wrap:wrap;border:1px solid var(--ep-border)}
+.photo-mode-actions .ep-btn{display:inline-flex;align-items:center;justify-content:center;min-height:36px;padding:8px 13px;white-space:nowrap}
+.photo-mode-actions .ep-btn:focus-visible{outline:2px solid var(--ep-accent);outline-offset:3px}
+@media(max-width:480px){.photo-mode-actions{top:10px;right:10px;max-width:calc(100% - 20px);gap:5px}.photo-mode-actions .ep-btn{padding:8px 10px;font-size:11px}}
+
+/* Artwork owns the left rail; scene editing stays a compact shortcut row. */
+.asset-sidebar{display:flex;flex-direction:column;width:260px;min-height:0;overflow:hidden;padding:12px}
+.asset-sidebar.scene-navigation--collapsed{width:56px;padding:12px 8px}
+.asset-sidebar .scene-navigation-heading{flex-shrink:0;margin-bottom:10px}
+.asset-scene-shortcuts{display:flex;gap:4px;flex-shrink:0;padding-bottom:12px;border-bottom:1px solid var(--ep-border)}
+.asset-scene-shortcuts .scene-navigation-row{flex:1;min-width:0;margin:0}
+.asset-scene-shortcuts .scene-navigation-item{min-height:36px;padding:8px!important;gap:6px;justify-content:center}
+.asset-scene-shortcuts .scene-navigation-item strong{font-size:10px;font-weight:500}
+.asset-scene-shortcuts .scene-navigation-item small,.asset-scene-shortcuts .scene-visibility{display:none}
+.asset-scene-shortcuts .scene-navigation-item>svg{width:12px}
+.scene-navigation--collapsed .asset-scene-shortcuts{flex-direction:column;border:0}
+.asset-library-body{min-height:0;flex:1;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
+.asset-library-body[hidden]{display:none}
+.tattoo-library{padding-top:17px}
+.tattoo-library-intro strong{font-size:15px;font-weight:600;letter-spacing:-.025em;color:var(--text-primary)}
+.tattoo-library-intro p{font-size:11px;line-height:1.55;color:var(--text-secondary);margin:6px 0 13px}
+.tattoo-library-upload{width:100%;justify-content:center;gap:8px!important;background:#8b5cf61c!important;border-color:#8b5cf655!important;color:#d4c1ff!important}
+.tattoo-library-search{display:flex;align-items:center;gap:8px;margin-top:14px;padding:0 10px;border:1px solid var(--ep-border);border-radius:8px;background:#ffffff04;color:var(--text-secondary)}
+.tattoo-library-search>svg{width:11px;flex-shrink:0}
+.tattoo-library-search input{width:100%;min-width:0;height:34px;border:0;background:transparent;color:var(--text-primary);font:inherit;font-size:11px;outline-offset:0}
+.tattoo-library-filters{display:flex;gap:4px;margin:12px 0 18px}
+.tattoo-library-filters button{flex:1;padding:6px 4px;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--text-secondary);font:inherit;font-size:10px;cursor:pointer}
+.tattoo-library-filters button[aria-pressed=true]{background:#ffffff0b;border-color:var(--ep-border);color:var(--text-primary)}
+.tattoo-library-results section{margin-bottom:19px}
+.tattoo-library-results h3{display:flex;justify-content:space-between;margin:0 0 10px;font-size:10px;letter-spacing:.04em;font-weight:500;color:var(--text-secondary)}
+.tattoo-library-results h3 span{font-variant-numeric:tabular-nums;opacity:.65}
+.tattoo-library-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 9px}
+.tattoo-asset{position:relative;min-width:0}
+.tattoo-asset-select{display:block;width:100%;padding:0;border:0;background:transparent;text-align:left;color:var(--text-primary);font:inherit;cursor:pointer;border-radius:8px}
+.tattoo-asset-art{display:block;position:relative;aspect-ratio:4/5;border:2px solid transparent;border-radius:9px;background:#ece8df;overflow:hidden;transition:border-color .15s,background .15s}
+.tattoo-asset-art img{display:block;width:100%;height:100%;object-fit:contain;padding:10px}
+.tattoo-asset-select:hover .tattoo-asset-art{background:#fffaf1;border-color:#b298e5}
+.tattoo-asset-select[aria-pressed=true] .tattoo-asset-art{border-color:#a78bfa}
+.tattoo-asset-check{position:absolute;right:5px;bottom:5px;display:grid;place-items:center;width:19px;height:19px;border-radius:50%;background:#8055d5;color:white;font-size:9px}
+.tattoo-asset-select strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;font-weight:500;margin:7px 0 3px}
+.tattoo-asset-select small{display:block;font-size:9px;color:var(--text-secondary)}
+.tattoo-asset-remove{position:absolute;right:6px;top:6px;width:25px;height:25px;display:grid;place-items:center;border:1px solid #0002;border-radius:6px;background:#fffdf5;color:#554a44;font-size:10px;cursor:pointer;opacity:0}
+.tattoo-asset:hover .tattoo-asset-remove,.tattoo-asset:focus-within .tattoo-asset-remove{opacity:1}
+.tattoo-library-note,.tattoo-library-error,.tattoo-library-footnote,.tattoo-library-empty p{font-size:10px;line-height:1.55;color:var(--text-secondary)}
+.tattoo-library-error{color:#f1aaa2}
+.tattoo-library-footnote{border-top:1px solid var(--ep-border);padding:12px 0 4px;margin:12px 0 0}
+.tattoo-library-empty{padding:22px 8px;text-align:center;border:1px dashed var(--ep-border);border-radius:9px}
+.tattoo-library-empty strong{font-size:12px;color:var(--text-primary)}
+@media(max-width:1100px){.asset-sidebar{display:flex;width:220px}.asset-sidebar.scene-navigation--collapsed{width:56px}}
+@media(max-width:700px){.asset-sidebar{width:100%;max-height:280px;flex-shrink:0;border-bottom:1px solid var(--ep-border)}.asset-sidebar.scene-navigation--collapsed{width:100%;max-height:52px;flex-direction:row;gap:10px;align-items:center}.asset-sidebar.scene-navigation--collapsed .asset-scene-shortcuts{flex-direction:row;padding:0}.asset-sidebar.scene-navigation--collapsed .scene-navigation-heading{margin:0}.tattoo-library-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.tattoo-asset-art{aspect-ratio:1}.tattoo-asset-remove{opacity:1}}
+@media(prefers-reduced-motion:reduce){.tattoo-asset-art{transition:none}}

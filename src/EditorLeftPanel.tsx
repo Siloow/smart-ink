@@ -1,59 +1,53 @@
-import { useState } from 'react';
+import TattooLibrary from './TattooLibrary';
+import { FaUser, FaRegImage, FaLightbulb, FaEye, FaEyeSlash, FaChevronLeft, FaChevronRight } from 'react-icons/fa';
+import type { InspectorTab } from './TopMenuBar';
 
 interface EditorLeftPanelProps {
-  sceneName: string;
-  /** What the viewport is showing: the whole figure, or one cut-out region. */
+  disabled?: boolean;
+  currentImage: string | null;
+  onChooseArtwork: (source: string) => void;
   bodyLabel: string;
-  onBack: () => void;
+  studioLabel: string;
+  activeTab: InspectorTab;
+  onSelect: (tab: InspectorTab) => void;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
+  tattooVisible: boolean;
+  onToggleTattoo: () => void;
 }
 
-export default function EditorLeftPanel({ sceneName, bodyLabel, onBack }: EditorLeftPanelProps) {
-  const [objectsTab, setObjectsTab] = useState(true);
-
+export default function EditorLeftPanel({ disabled = false, bodyLabel, studioLabel, activeTab, onSelect,
+  collapsed, onToggleCollapsed, tattooVisible, onToggleTattoo, currentImage, onChooseArtwork }: EditorLeftPanelProps) {
+  const items = [
+    { id: 'figure' as const, label: 'Figure', detail: bodyLabel, Icon: FaUser },
+    { id: 'tattoo' as const, label: 'Tattoos', detail: tattooVisible ? 'Visible on figure' : 'Hidden', Icon: FaRegImage },
+    { id: 'studio' as const, label: 'Studio', detail: studioLabel, Icon: FaLightbulb },
+  ];
   return (
-    <aside className="editor-left-panel ep-sidebar">
-      <div className="editor-tabs">
-        <button
-          type="button"
-          className={`editor-tab${objectsTab ? ' active' : ''}`}
-          onClick={() => setObjectsTab(true)}
-        >
-          Objects
-        </button>
-        <button
-          type="button"
-          className={`editor-tab${!objectsTab ? ' active' : ''}`}
-          onClick={() => setObjectsTab(false)}
-        >
-          Assets
+    <aside className={`editor-left-panel ep-sidebar scene-navigation asset-sidebar${collapsed ? ' scene-navigation--collapsed' : ''}`} inert={disabled} aria-label="Tattoo library and scene controls">
+      <div className="scene-navigation-heading">
+        {!collapsed && <span>Tattoo library</span>}
+        <button type="button" className="scene-icon-button" onClick={onToggleCollapsed}
+          aria-label={collapsed ? 'Expand scene sidebar' : 'Collapse scene sidebar'} aria-expanded={!collapsed}
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
+          {collapsed ? <FaChevronRight aria-hidden /> : <FaChevronLeft aria-hidden />}
         </button>
       </div>
-
-      <div className="ep-sidebar-body editor-left-body">
-        <header className="ep-header">
-          <span className="ep-title">Scene</span>
-          <span className="ep-hint">{sceneName}</span>
-        </header>
-
-        <div className="editor-left-scene-tree">
-          <div className="scene-item active">
-            <span className="scene-check" aria-hidden>✓</span>
-            {sceneName}
-          </div>
-          <input type="search" className="editor-search" placeholder="Search" aria-label="Search scene" />
-          <div className="scene-item child">
-            <span className="scene-tree-prefix" aria-hidden>└</span>
-            <span className="scene-tree-emoji" aria-hidden>🧊</span>
-            {bodyLabel}
-          </div>
-        </div>
-      </div>
-
-      <div className="editor-left-bottom">
-        <button type="button" className="editor-left-link" onClick={onBack}>
-          ← Back to scenes
-        </button>
-      </div>
+      <nav className="asset-scene-shortcuts" aria-label="Scene sections">
+        {items.map(({ id, label, detail, Icon }) => <div className="scene-navigation-row" key={id}>
+          <button type="button" className="scene-navigation-item" aria-current={activeTab === id ? 'true' : undefined}
+            aria-label={label} title={collapsed ? `${label} · ${detail}` : undefined} onClick={() => onSelect(id)}>
+            <Icon aria-hidden />
+            {!collapsed && <span><strong>{label}</strong><small>{detail}</small></span>}
+          </button>
+          {id === 'tattoo' && !collapsed && <button type="button" className="scene-icon-button scene-visibility"
+            aria-label={tattooVisible ? 'Hide tattoo' : 'Show tattoo'} aria-pressed={tattooVisible}
+            title={tattooVisible ? 'Hide tattoo' : 'Show tattoo'} onClick={onToggleTattoo}>
+            {tattooVisible ? <FaEye aria-hidden /> : <FaEyeSlash aria-hidden />}
+          </button>}
+        </div>)}
+      </nav>
+      <div className="asset-library-body" hidden={collapsed}><TattooLibrary currentImage={currentImage} onChoose={onChooseArtwork} disabled={disabled} /></div>
     </aside>
   );
 }

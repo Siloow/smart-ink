@@ -22,7 +22,18 @@ export default defineConfig({
     proxy: {
       '/health': 'http://127.0.0.1:8000',
       '/sync-live': 'http://127.0.0.1:8000',
-      '/render-v2': 'http://127.0.0.1:8000',
+      '/render-v2': {
+        target: 'http://127.0.0.1:8000',
+        configure(proxy) {
+          // The upload has finished before Blender renders. Forward a browser
+          // disconnect during that wait so the server can stop its process.
+          proxy.on('proxyReq', (proxyReq, _req, res) => {
+            res.on('close', () => {
+              if (!res.writableEnded) proxyReq.destroy();
+            });
+          });
+        },
+      },
     },
   },
 })

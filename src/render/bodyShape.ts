@@ -1,17 +1,6 @@
-/**
- * Sims-style body shaping without morph targets.
- *
- * None of the body meshes carry blend shapes, so shape sliders are applied
- * procedurally to the mesh's own vertices: inflate/deflate along welded
- * vertex normals inside smooth height bands (build, chest, waist, belly,
- * arms, legs), lateral scaling in bands (shoulders, hips), a head scale, a
- * leg stretch, and an overall height scale. Heights are fractions of the
- * undeformed bounding box so the same numbers work for every mesh.
- *
- * smartink-live/sceneImporter.py implements the identical math for Blender
- * (apply_body_shape). Keep the constants in BODY_SHAPE_TUNING in sync.
- */
+/** Bounded, proportional body shaping. Keep sceneImporter.py in sync. */
 import * as THREE from 'three';
+import { torsoHalfWidth } from './bodyRegions';
 
 export const BODY_SHAPE_KEYS = [
   'height',
@@ -44,6 +33,15 @@ export const DEFAULT_BODY_SHAPE: BodyShape = {
   head: 0,
 };
 
+/** Slider strength is normalized; physical limits live in BODY_SHAPE_TUNING. */
+export const BODY_SHAPE_LIMITS: Record<BodyShapeKey, { min: number; max: number }> =
+  Object.fromEntries(BODY_SHAPE_KEYS.map((key) => [key, { min: -1, max: 1 }])) as Record<BodyShapeKey, { min: number; max: number }>;
+
+export function clampShapeValue(key: BodyShapeKey, value: number): number {
+  const { min, max } = BODY_SHAPE_LIMITS[key];
+  return Number.isFinite(value) ? Math.max(min, Math.min(max, value)) : 0;
+}
+
 export interface BodyShapeParam {
   key: BodyShapeKey;
   label: string;
@@ -52,17 +50,17 @@ export interface BodyShapeParam {
 }
 
 export const BODY_SHAPE_PARAMS: BodyShapeParam[] = [
-  { key: 'height', label: 'Height', hint: 'Scales the whole figure' },
-  { key: 'build', label: 'Build', hint: 'Overall mass, head to foot' },
-  { key: 'shoulders', label: 'Shoulders', hint: 'Width across the deltoids' },
-  { key: 'chest', label: 'Chest', hint: 'Depth and girth of the rib cage' },
-  { key: 'waist', label: 'Waist', hint: 'Girth at the narrowest point' },
-  { key: 'belly', label: 'Belly', hint: 'Front only, below the ribs' },
-  { key: 'hips', label: 'Hips', hint: 'Width across the pelvis' },
-  { key: 'arms', label: 'Arms', hint: 'Thickness, both sides' },
-  { key: 'legs', label: 'Legs', hint: 'Thickness, both sides' },
-  { key: 'legLength', label: 'Leg length', hint: 'Stretches below the hip' },
-  { key: 'head', label: 'Head', hint: 'Size relative to the body' },
+  { key: 'height', label: 'Height', hint: 'Whole figure, from 8% shorter to 8% taller' },
+  { key: 'build', label: 'Build', hint: 'Body fullness; preserves the face, hands and feet' },
+  { key: 'shoulders', label: 'Shoulders', hint: 'Moves shoulders and arms together' },
+  { key: 'chest', label: 'Chest', hint: 'Proportional rib-cage width and depth' },
+  { key: 'waist', label: 'Waist', hint: 'Smoothly adjusts the middle of the torso' },
+  { key: 'belly', label: 'Belly', hint: 'Front fullness with a gradual blend into the ribs' },
+  { key: 'hips', label: 'Hips', hint: 'Pelvis width, blending into the upper legs' },
+  { key: 'arms', label: 'Arms', hint: 'Upper arms and forearms; preserves hands and softens at elbows' },
+  { key: 'legs', label: 'Legs', hint: 'Thighs and calves; preserves feet and softens at knees' },
+  { key: 'legLength', label: 'Leg length', hint: 'Lengthens the legs while keeping feet grounded' },
+  { key: 'head', label: 'Head', hint: 'Up to 6% smaller or larger; preserves facial proportions' },
 ];
 
 export interface BodyShapePreset {
@@ -90,7 +88,7 @@ export function normalizeShape(partial?: Partial<BodyShape> | null): BodyShape {
   if (!partial) return out;
   for (const key of BODY_SHAPE_KEYS) {
     const v = partial[key];
-    if (typeof v === 'number' && Number.isFinite(v)) out[key] = clamp(v, -1, 1);
+    if (typeof v === 'number' && Number.isFinite(v)) out[key] = clampShapeValue(key, v);
   }
   return out;
 }
@@ -122,25 +120,20 @@ export function formatShapeValue(v: number): string {
 // Deformation
 // ---------------------------------------------------------------------------
 
-/**
- * Amplitudes and band positions. Bands are centre/half-width as fractions of
- * body height (feet 0, crown 1); amplitudes are fractions of body height
- * (inflate) or scale factors at slider = 1. Mirrored in sceneImporter.py.
- */
+/** Combined regional limits prevent Build + a local control from over-inflating. */
 export const BODY_SHAPE_TUNING = {
-  height: 0.12,
-  build: 0.03,
-  shoulders: { scale: 0.14, c: 0.82, hw: 0.08 },
-  chest: { amp: 0.03, c: 0.74, hw: 0.09 },
-  waist: { amp: 0.035, c: 0.6, hw: 0.07 },
-  belly: { amp: 0.055, c: 0.62, hw: 0.1 },
-  hips: { scale: 0.1, c: 0.5, hw: 0.08 },
-  arms: { amp: 0.025, c: 0.66, hw: 0.22 },
-  legs: { amp: 0.03, c: 0.26, hw: 0.24 },
-  legLength: { stretch: 0.12, hip: 0.5 },
-  head: { scale: 0.18, c: 0.93, hw: 0.1 },
-  /** Vertices further out laterally than this fraction of the half-width count as arms. */
-  armMask: { from: 0.42, to: 0.62 },
+  height: 0.08,
+  build: 0.14,
+  shoulders: 0.012,
+  chest: { width: 0.10, depth: 0.14, c: 0.735, hw: 0.13 },
+  waist: { scale: 0.16, c: 0.605, hw: 0.12 },
+  belly: { depth: 0.022, c: 0.59, hw: 0.13 },
+  hips: 0.009,
+  arms: { scale: 0.27, min: 0.78, max: 1.32 },
+  legs: { scale: 0.25, min: 0.80, max: 1.30 },
+  torso: { min: 0.80, max: 1.28 },
+  legLength: 0.035,
+  head: { scale: 0.06, pivot: 0.855 },
 } as const;
 
 /** Raised-cosine window: 1 at the centre, 0 beyond ±hw. */
@@ -161,8 +154,13 @@ export interface Deformable {
   /** Welded (position-shared) vertex index, for smooth normals across seams. */
   weld: Int32Array;
   weldCount: number;
-  /** Welded normals of the undeformed mesh; the inflate direction. */
+  /** Exact position representatives: deform seam/face duplicates only once. */
+  unique: Uint32Array;
+  source: Uint32Array;
+  /** Welded normals of the undeformed mesh, retained for placement consumers. */
   normals: Float32Array;
+  /** Original UV tangent frame; pose edits reset and rotate these directions. */
+  tangents?: Float32Array;
 }
 
 export interface ShapeBounds {
@@ -242,7 +240,17 @@ export function prepareDeformable(geometry: THREE.BufferGeometry): Deformable {
   const { weld, weldCount } = buildWeld(base, count);
   const normals = new Float32Array(count * 3);
   computeWeldedNormals(base, count, geometry.index ? geometry.index.array : null, weld, weldCount, normals);
-  return { geometry, base, weld, weldCount, normals };
+  const representatives = new Map<string, number>();
+  const source = new Uint32Array(count), unique: number[] = [];
+  for (let i = 0; i < count; i++) {
+    const key = `${base[i * 3]},${base[i * 3 + 1]},${base[i * 3 + 2]}`;
+    let first = representatives.get(key);
+    if (first === undefined) { first = i; representatives.set(key, i); unique.push(i); }
+    source[i] = first;
+  }
+  const tangent = geometry.getAttribute('tangent');
+  const tangents = tangent ? new Float32Array(tangent.array) : undefined;
+  return { geometry, base, weld, weldCount, normals, tangents, source, unique: Uint32Array.from(unique) };
 }
 
 /** Union bounds of the undeformed meshes, in their shared local space. */
@@ -264,102 +272,146 @@ export function shapeBounds(deformables: Deformable[]): ShapeBounds {
   return b;
 }
 
-/**
- * Writes the reshaped positions and normals into each geometry. Y is up and
- * +Z faces the camera, matching the meshes in public/models/.
- */
-export function applyBodyShape(
-  deformables: Deformable[],
-  bounds: ShapeBounds,
-  shape: BodyShape
-): void {
-  const s = effectiveShape(shape);
-  const T = BODY_SHAPE_TUNING;
+type Point3 = [number, number, number];
+interface ShapeFrame {
+  arms: [Point3, Point3][];
+  legs: [Point3, Point3][];
+  torsoZ: number;
+  headZ: number;
+}
+
+/** Measure centerlines from the ORIGINAL mesh, so male/female proportions are retained. */
+function measureFrame(deformables: Deformable[], bounds: ShapeBounds): ShapeFrame {
+  const H = bounds.maxY - bounds.minY;
+  const cx = (bounds.minX + bounds.maxX) / 2;
+  const halfW = (bounds.maxX - bounds.minX) / 2;
+  function section(h: number, side: number, limb: boolean): Point3 {
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    for (const d of deformables) for (const vertex of d.unique) {
+      const i = vertex * 3;
+      const x = d.base[i], y = d.base[i + 1], z = d.base[i + 2];
+      if (Math.abs((y - bounds.minY) / H - h) > 0.018) continue;
+      if (side && (x - cx) * side <= 0) continue;
+      const outside = Math.abs(x - cx) / halfW > torsoHalfWidth(h);
+      if (h > 0.5 && outside !== limb) continue;
+      minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+      minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z);
+    }
+    return [Number.isFinite(minX) ? (minX + maxX) / 2 : cx + side * H * 0.1,
+      bounds.minY + h * H,
+      Number.isFinite(minZ) ? (minZ + maxZ) / 2 : (bounds.minZ + bounds.maxZ) / 2];
+  }
+  return {
+    arms: [-1, 1].map((side) => [section(0.54, side, true), section(0.76, side, true)]),
+    legs: [-1, 1].map((side) => [section(0.12, side, false), section(0.42, side, false)]),
+    torsoZ: section(0.60, 0, false)[2],
+    headZ: section(0.90, 0, false)[2],
+  };
+}
+
+/** Change radius perpendicular to the limb, not its length or small skin details. */
+function radialDelta(p: Point3, axis: [Point3, Point3], amount: number): Point3 {
+  const [a, b] = axis;
+  const dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2];
+  const t = ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy + (p[2] - a[2]) * dz) /
+    Math.max(1e-12, dx * dx + dy * dy + dz * dz);
+  return [(p[0] - a[0] - t * dx) * amount,
+    (p[1] - a[1] - t * dy) * amount, (p[2] - a[2] - t * dz) * amount];
+}
+
+/** Writes positions from the original snapshot; edits never accumulate. */
+export function applyBodyShape(deformables: Deformable[], bounds: ShapeBounds, shape: BodyShape): void {
+  const s = effectiveShape(shape), T = BODY_SHAPE_TUNING;
   const H = bounds.maxY - bounds.minY;
   const halfW = Math.max(1e-6, (bounds.maxX - bounds.minX) / 2);
-  const cx = (bounds.minX + bounds.maxX) / 2;
-  const cz = (bounds.minZ + bounds.maxZ) / 2;
-  const hipY = bounds.minY + T.legLength.hip * H;
-  const headY = bounds.minY + T.head.c * H;
+  const cx = (bounds.minX + bounds.maxX) / 2, cz = (bounds.minZ + bounds.maxZ) / 2;
   const identity = isDefaultShape(s) || H <= 0;
-
-  const amp = {
-    build: T.build * H,
-    chest: T.chest.amp * H,
-    waist: T.waist.amp * H,
-    belly: T.belly.amp * H,
-    arms: T.arms.amp * H,
-    legs: T.legs.amp * H,
-  };
+  const frame = identity ? null : measureFrame(deformables, bounds);
   const heightK = 1 + T.height * s.height;
-  const legK = 1 + T.legLength.stretch * s.legLength;
+  const armAmount = clamp(1 + T.arms.scale * s.arms + 0.12 * s.build, T.arms.min, T.arms.max) - 1;
+  const legAmount = clamp(1 + T.legs.scale * s.legs + 0.12 * s.build, T.legs.min, T.legs.max) - 1;
 
   for (const d of deformables) {
     const attr = d.geometry.getAttribute('position') as THREE.BufferAttribute;
-    const out = attr.array as Float32Array;
-    const base = d.base;
-    const n = d.normals;
-    const count = attr.count;
+    const out = attr.array as Float32Array, base = d.base, count = attr.count;
+    if (!frame) out.set(base);
+    else for (const i of d.unique) {
+      const o = i * 3;
+      const x0 = base[o], y0 = base[o + 1], z0 = base[o + 2];
+      const h = (y0 - bounds.minY) / H, u = Math.abs(x0 - cx) / halfW;
+      const sign = x0 < cx ? -1 : 1, side = sign < 0 ? 0 : 1;
+      const armMask = smoothstep(torsoHalfWidth(h) - 0.035, torsoHalfWidth(h) + 0.065, u) *
+        smoothstep(0.32, 0.40, h) * (1 - smoothstep(0.82, 0.88, h));
+      const torsoEnvelope = smoothstep(0.43, 0.52, h) * (1 - smoothstep(0.79, 0.87, h));
+      const torsoMask = (1 - armMask) * torsoEnvelope;
+      const chest = band(h, T.chest.c, T.chest.hw), waist = band(h, T.waist.c, T.waist.hw);
+      const width = clamp(1 + T.build * s.build + T.chest.width * s.chest * chest +
+        T.waist.scale * s.waist * waist, T.torso.min, T.torso.max) - 1;
+      const depth = clamp(1 + T.build * s.build + T.chest.depth * s.chest * chest +
+        T.waist.scale * s.waist * waist, T.torso.min, T.torso.max) - 1;
+      // Preserve continuity at the deltoid: a wider chest carries the whole arm.
+      const carryWidth = clamp(1 + T.build * s.build + T.chest.width * s.chest,
+        T.torso.min, T.torso.max) - 1;
+      let x = x0 + (x0 - cx) * width * torsoMask + sign * H * 0.105 * carryWidth * armMask;
+      let y = y0;
+      let z = z0 + (z0 - frame.torsoZ) * depth * torsoMask;
+      z += H * T.belly.depth * s.belly * band(h, T.belly.c, T.belly.hw) * torsoMask *
+        smoothstep(-0.01, 0.045, (z0 - frame.torsoZ) / H);
 
-    if (identity) {
-      out.set(base);
-    } else {
-      for (let i = 0; i < count; i++) {
-        const o = i * 3;
-        const x0 = base[o], y0 = base[o + 1], z0 = base[o + 2];
-        const nx = n[o], ny = n[o + 1], nz = n[o + 2];
-        const h = (y0 - bounds.minY) / H;
-        const u = Math.abs(x0 - cx) / halfW;
-        const front = Math.max(0, nz);
-        const armMask = smoothstep(T.armMask.from, T.armMask.to, u);
-        const torsoMask = 1 - armMask;
+      const armWeight = armMask * smoothstep(0.51, 0.57, h) * (1 - smoothstep(0.77, 0.85, h)) *
+        (1 - 0.25 * band(h, 0.64, 0.04));
+      const legWeight = (1 - armMask) * smoothstep(0.075, 0.17, h) * (1 - smoothstep(0.40, 0.51, h)) *
+        (1 - 0.55 * band(h, 0.275, 0.055)) * smoothstep(0, 0.035, Math.abs(x0 - cx) / H);
+      const da = radialDelta([x0, y0, z0], frame.arms[side], armAmount * armWeight);
+      const dl = radialDelta([x0, y0, z0], frame.legs[side], legAmount * legWeight);
+      x += da[0] + dl[0]; y += da[1] + dl[1]; z += da[2] + dl[2];
 
-        const off =
-          s.build * amp.build +
-          s.chest * amp.chest * band(h, T.chest.c, T.chest.hw) * torsoMask +
-          s.waist * amp.waist * band(h, T.waist.c, T.waist.hw) * torsoMask +
-          s.belly * amp.belly * band(h, T.belly.c, T.belly.hw) * torsoMask * front +
-          s.arms * amp.arms * band(h, T.arms.c, T.arms.hw) * armMask +
-          s.legs * amp.legs * band(h, T.legs.c, T.legs.hw) * torsoMask;
+      // Carry attached arms with the shoulder; do not stretch the hand itself.
+      const shoulderWeight = armMask + (1 - armMask) * smoothstep(0.65, 0.78, h) *
+        (1 - smoothstep(0.82, 0.89, h)) * smoothstep(0, 0.09, Math.abs(x0 - cx) / H);
+      x += sign * H * T.shoulders * s.shoulders * shoulderWeight;
+      const hipWeight = (1 - armMask) * smoothstep(0.20, 0.47, h) * (1 - smoothstep(0.54, 0.64, h)) *
+        smoothstep(0, 0.065, Math.abs(x0 - cx) / H);
+      x += sign * H * T.hips * s.hips * hipWeight;
 
-        let x = x0 + nx * off;
-        let y = y0 + ny * off;
-        let z = z0 + nz * off;
-
-        const lateral =
-          (1 + T.shoulders.scale * s.shoulders * band(h, T.shoulders.c, T.shoulders.hw)) *
-          (1 + T.hips.scale * s.hips * band(h, T.hips.c, T.hips.hw));
-        x = cx + (x - cx) * lateral;
-
-        if (s.head !== 0) {
-          const k = 1 + T.head.scale * s.head * band(h, T.head.c, T.head.hw);
-          x = cx + (x - cx) * k;
-          y = headY + (y - headY) * k;
-          z = cz + (z - cz) * k;
-        }
-
-        if (y < hipY) y = hipY - (hipY - y) * legK;
-
-        out[o] = cx + (x - cx) * heightK;
-        out[o + 1] = bounds.minY + (y - bounds.minY) * heightK;
-        out[o + 2] = cz + (z - cz) * heightK;
-      }
+      // Uniform face scaling with a neck transition, instead of a face-shaped bulge.
+      const headK = T.head.scale * s.head * smoothstep(0.83, 0.90, h);
+      x += (x0 - cx) * headK;
+      y += (y0 - (bounds.minY + T.head.pivot * H)) * headK;
+      z += (z0 - frame.headZ) * headK;
+      // Length is added above the feet; the upper body moves as one piece.
+      y += T.legLength * H * s.legLength * (armMask + (1 - armMask) * smoothstep(0.045, 0.48, h));
+      out[o] = cx + (x - cx) * heightK;
+      out[o + 1] = bounds.minY + (y - bounds.minY) * heightK;
+      out[o + 2] = cz + (z - cz) * heightK;
     }
-
-    attr.needsUpdate = true;
-    const normalAttr = d.geometry.getAttribute('normal') as THREE.BufferAttribute | undefined;
-    if (normalAttr && normalAttr.array.length === out.length) {
-      computeWeldedNormals(
-        out,
-        count,
-        d.geometry.index ? d.geometry.index.array : null,
-        d.weld,
-        d.weldCount,
-        normalAttr.array as Float32Array
-      );
-      normalAttr.needsUpdate = true;
+    if (frame) for (let i = 0; i < count; i++) {
+      const source = d.source[i];
+      if (source === i) continue;
+      out[i * 3] = out[source * 3];
+      out[i * 3 + 1] = out[source * 3 + 1];
+      out[i * 3 + 2] = out[source * 3 + 2];
     }
-    d.geometry.computeBoundingBox();
-    d.geometry.computeBoundingSphere();
+    const tangent = d.geometry.getAttribute('tangent');
+    if (tangent && d.tangents) {
+      (tangent.array as Float32Array).set(d.tangents);
+      tangent.needsUpdate = true;
+    }
+    refreshDeformableGeometry(d);
   }
+}
+
+/** Refresh lighting normals and picking bounds after shape or pose deformation. */
+export function refreshDeformableGeometry(d: Deformable): void {
+  const attr = d.geometry.getAttribute('position') as THREE.BufferAttribute;
+  const out = attr.array as Float32Array;
+  attr.needsUpdate = true;
+  const normalAttr = d.geometry.getAttribute('normal') as THREE.BufferAttribute | undefined;
+  if (normalAttr && normalAttr.array.length === out.length) {
+    computeWeldedNormals(out, attr.count, d.geometry.index ? d.geometry.index.array : null,
+      d.weld, d.weldCount, normalAttr.array as Float32Array);
+    normalAttr.needsUpdate = true;
+  }
+  d.geometry.computeBoundingBox();
+  d.geometry.computeBoundingSphere();
 }
