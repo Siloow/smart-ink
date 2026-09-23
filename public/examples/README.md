@@ -1,34 +1,17 @@
-# Landing page examples
+# Homepage images
 
-The three "How it works" cards on the landing page ship with drawn technical
-figures (`src/landing/PipelineFigures.tsx`) so the page never depends on assets
-that don't exist yet. Each one can be replaced with a real capture.
+The old “How it works” illustration cards have been removed. The homepage now
+includes a finished-render showcase followed by artist benefits.
 
-## Replacing a figure
+The showcase source is configured in `src/landing/RenderShowcase.tsx` under
+`FEATURED_RENDER`. It currently points to `/renders/hero-arm.webp`, matching the
+existing hero image. Put the exported image at `public/renders/hero-arm.webp`,
+or update that source, alt text and caption for the final selected image.
 
-1. Put the image in this folder, e.g. `placement.png`.
-2. Point the matching key at it in `EXAMPLE_IMAGES` in `src/LandingPage.tsx`:
+The source is never cropped: portrait/square images use an image-led two-column
+composition; landscape images open into a full-width composition. The original
+file can be opened with “View full render.” Until it is available, the page uses
+an intentional “coming soon” state without a broken image or active download.
 
-```ts
-const EXAMPLE_IMAGES: Record<StepKey, string | null> = {
-  artwork: null,
-  placement: '/examples/placement.png',
-  render: null,
-};
-```
-
-Anything still set to `null` keeps using its drawn figure, so you can swap them
-in one at a time.
-
-## What each slot wants
-
-| Key | Shows | Notes |
-| --- | --- | --- |
-| `artwork` | The flat design going in | A transparent PNG on a dark card reads best. |
-| `placement` | The design on the mesh in the editor | Crop to the viewport — leave the panels out. |
-| `render` | The finished Cycles render | This is the one that sells it. Worth the most effort. |
-
-Aim for a roughly 14:13 ratio (the drawn figures are 280×260) so the cards stay
-the same height, and keep each file under a few hundred KB — they load on first
-paint. Images are drawn with `object-fit: contain`, so an off-ratio image is
-letterboxed rather than cropped.
+For a different full-resolution original, point the caption link to that asset
+while keeping a compressed WebP in the inline showcase.

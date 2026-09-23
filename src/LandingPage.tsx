@@ -1,4 +1,4 @@
-import React, { useId, useState, type FormEvent, type ReactNode } from 'react';
+import React, { useId, useState, type FormEvent } from 'react';
 import { authMode, requestBetaAccess } from './auth/betaAuthService';
 import type { RequestAccessResult } from './auth/types';
 import {
@@ -6,53 +6,20 @@ import {
   isWaitlistEndpointConfigured,
   submitWaitlistRequest,
 } from './auth/waitlistSubmit';
-import { ArtworkFigure, PlacementFigure, RenderFigure } from './landing/PipelineFigures';
 import HeroPreview from './landing/HeroPreview';
+import RenderShowcase from './landing/RenderShowcase';
+import './landing/render-story.css';
 
 interface LandingPageProps {
   onNavigateToLogin: () => void;
+  signedIn?: boolean;
 }
 
-type StepKey = 'artwork' | 'placement' | 'render';
-
-/**
- * Real captures override the drawn figures. Drop files into public/examples/
- * and point the matching key at them, e.g. '/examples/placement.png'.
- */
-const EXAMPLE_IMAGES: Record<StepKey, string | null> = {
-  artwork: null,
-  placement: null,
-  render: null,
-};
-
-const STEPS: { key: StepKey; index: string; title: string; body: string; figure: ReactNode }[] = [
+const ARTIST_BENEFITS = [
   {
-    key: 'artwork',
-    index: '01',
-    title: 'Bring your artwork',
-    body: 'Drop in a PNG with a transparent background — line work, colour, whatever you already draw in. Nothing to redraw or trace.',
-    figure: <ArtworkFigure />,
-  },
-  {
-    key: 'placement',
-    index: '02',
-    title: 'Place it on the body',
-    body: 'Click the mesh to drop the design, then drag to nudge it. Scale, rotation and opacity update live, a safe zone keeps it clear of seams, and you can orbit to check how it reads from every angle.',
-    figure: <PlacementFigure />,
-  },
-  {
-    key: 'render',
-    index: '03',
-    title: 'Render it properly',
-    body: 'Choose a body, pose, skin tone and lighting look, then send the exact same scene to Blender Cycles for a client-ready image — or export an Instagram, portfolio or print crop straight from the browser.',
-    figure: <RenderFigure />,
-  },
-];
-
-const VALUE_PROPS = [
-  {
-    title: 'Settle placement before the needle',
-    body: 'Clients see scale, position and flow on a body instead of a design pasted flat over a photo. Fewer surprises on the day, fewer redraws.',
+    category: 'Placement',
+    title: 'Get on the same page.',
+    body: 'Show your client the scale and position on a body. Explore the options together, with a clear picture of what each change means.',
     icon: (
       <>
         <circle cx="12" cy="12" r="8.5" />
@@ -61,8 +28,9 @@ const VALUE_PROPS = [
     ),
   },
   {
-    title: 'The same light every time',
-    body: 'Studio softbox, window daylight or dramatic rim, with four skin tones and two poses. One consistent rig, so a portfolio built from it hangs together.',
+    category: 'Flow',
+    title: 'See how the design belongs.',
+    body: 'Follow the curve of an arm, check the silhouette, and turn the body to see another angle. Refine the placement while the idea is still taking shape.',
     icon: (
       <>
         <path d="M12 3.5a6 6 0 0 1 3.4 10.9V17a1 1 0 0 1-1 1h-4.8a1 1 0 0 1-1-1v-2.6A6 6 0 0 1 12 3.5Z" />
@@ -71,8 +39,9 @@ const VALUE_PROPS = [
     ),
   },
   {
-    title: 'Two levels of output',
-    body: 'A fast browser preview while you iterate, and a full Cycles render when the image has to carry weight. Both come out of the same scene.',
+    category: 'Presentation',
+    title: 'Give your work the right light.',
+    body: 'Choose the lighting, frame the details, and render an image to share. Bring the same considered look to client proposals and portfolio concepts.',
     icon: (
       <>
         <rect x="3.5" y="5.5" width="17" height="13" rx="2" />
@@ -190,20 +159,7 @@ const RequestAccessForm: React.FC<{ source: string; buttonLabel: string }> = ({
   );
 };
 
-const StepFigure: React.FC<{ stepKey: StepKey; title: string; figure: ReactNode }> = ({
-  stepKey,
-  title,
-  figure,
-}) => {
-  const override = EXAMPLE_IMAGES[stepKey];
-  return (
-    <div className="step-stage">
-      {override ? <img src={override} alt={title} loading="lazy" /> : figure}
-    </div>
-  );
-};
-
-const LandingPage: React.FC<LandingPageProps> = ({ onNavigateToLogin }) => {
+const LandingPage: React.FC<LandingPageProps> = ({ onNavigateToLogin, signedIn = false }) => {
   const scrollTo = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
 
   return (
@@ -224,13 +180,13 @@ const LandingPage: React.FC<LandingPageProps> = ({ onNavigateToLogin }) => {
         </a>
         <nav className="landing-nav-links">
           <a
-            href="#how"
+            href="#render"
             onClick={(e) => {
               e.preventDefault();
-              scrollTo('how');
+              scrollTo('render');
             }}
           >
-            How it works
+            The finished image
           </a>
           <a
             href="#why"
@@ -244,7 +200,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onNavigateToLogin }) => {
         </nav>
         <div className="landing-nav-actions">
           <button type="button" className="btn-quiet" onClick={onNavigateToLogin}>
-            Log in
+            {signedIn ? 'My Projects' : 'Log in'}
           </button>
           <button type="button" className="btn-primary btn-primary--sm" onClick={() => scrollTo('request')}>
             Request access
@@ -277,36 +233,19 @@ const LandingPage: React.FC<LandingPageProps> = ({ onNavigateToLogin }) => {
         </div>
       </section>
 
-      <section className="section section--how" id="how">
-        <header className="section-head">
-          <p className="section-eyebrow">How it works</p>
-          <h2>Three steps, one scene</h2>
-          <p className="section-lead">
-            Your design goes in flat and comes out lit on a body. Nothing in between is guesswork.
-          </p>
-        </header>
-        <ol className="step-grid">
-          {STEPS.map((step) => (
-            <li key={step.key} className="step-card">
-              <StepFigure stepKey={step.key} title={step.title} figure={step.figure} />
-              <div className="step-body">
-                <p className="step-index">{step.index}</p>
-                <h3>{step.title}</h3>
-                <p>{step.body}</p>
-              </div>
-            </li>
-          ))}
-        </ol>
-      </section>
+      <RenderShowcase />
 
-      <section className="section section--why" id="why">
+      <section className="section section--why" id="why" aria-labelledby="artists-title">
         <header className="section-head">
           <p className="section-eyebrow">Why artists use it</p>
-          <h2>Built for the conversation before the session</h2>
+          <h2 id="artists-title">Make the next decision a visual one.</h2>
+          <p className="section-lead">
+            More room to explore your ideas. A clearer way to share them.
+          </p>
         </header>
         <div className="value-grid">
-          {VALUE_PROPS.map((item) => (
-            <article key={item.title} className="value-card">
+          {ARTIST_BENEFITS.map((item) => (
+            <article key={item.category} className="value-card">
               <svg
                 className="value-icon"
                 viewBox="0 0 24 24"
@@ -339,7 +278,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onNavigateToLogin }) => {
           <p className="request-login">
             Already invited?{' '}
             <button type="button" className="link-button" onClick={onNavigateToLogin}>
-              Log in
+              {signedIn ? 'My Projects' : 'Log in'}
             </button>
           </p>
         </div>

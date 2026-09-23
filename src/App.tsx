@@ -89,7 +89,7 @@ function App() {
   }
 
   if (gateView === 'landing') {
-    return <LandingPage onNavigateToLogin={() => setGateView('login')} />
+    return <LandingPage signedIn={!!betaAuth.session} onNavigateToLogin={() => betaAuth.session ? enterApp() : setGateView('login')} />
   }
 
   if (gateView === 'admin') {
@@ -141,7 +141,7 @@ function App() {
 
   const session = betaAuth.session
   if (!session) {
-    return <LandingPage onNavigateToLogin={() => setGateView('login')} />
+    return <LandingPage signedIn={!!betaAuth.session} onNavigateToLogin={() => betaAuth.session ? enterApp() : setGateView('login')} />
   }
 
   return (

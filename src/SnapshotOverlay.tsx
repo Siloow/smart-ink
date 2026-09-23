@@ -137,7 +137,7 @@ export default function SnapshotOverlay({ mode, status, imageUrl, previewUrl, pr
           <button type="button" aria-pressed={quality === 'quick'} onClick={() => onQualityChange('quick')}>Quick</button>
           <button type="button" aria-pressed={quality === 'detailed'} onClick={() => onQualityChange('detailed')}>Detailed</button>
         </fieldset>
-        <span id={`${id}-quality-hint`} className="snapshot-quality-hint">{quality === 'quick' ? 'Faster preview' : '2560 px · finer ink detail · longer render'}</span>
+        <span id={`${id}-quality-hint`} className="snapshot-quality-hint">{quality === 'quick' ? 'Faster preview' : '2560 px · sharp tattoo detail · longer render'}</span>
         <div className="snapshot-action-buttons">
           {!composing && !busy && <button type="button" className="snapshot-button" onClick={onAdjust}>Adjust shot</button>}
           {!composing && <button type="button" className={`snapshot-button snapshot-button--compare ${showLive ? 'is-active' : ''}`} aria-pressed={showLive} aria-describedby={hasImage && !comparisonAvailable ? `${id}-comparison-hint` : undefined} disabled={!hasImage || !comparisonAvailable || (busy && hasPreview)} onClick={() => { if (hasImage && comparisonAvailable) setCompare(value => !value); }}>{showLive ? 'Show snapshot' : comparisonAvailable ? 'Compare with live' : 'Compare unavailable'}</button>}

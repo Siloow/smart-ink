@@ -1129,7 +1129,12 @@ export const HeroPreview: React.FC = () => {
           <span className="hero-preview-label hero-preview-label--mesh">mesh</span>
           <span className="hero-preview-label hero-preview-label--render">render</span>
           <span className="hero-preview-hint">
-            {placementStatus || (designMode ? 'drag to move the design' : 'click to place · drag to rotate · ⌘/Ctrl move')}
+            {placementStatus || (designMode ? 'drag to move the design' : (
+              <>
+                <span className="hero-preview-hint-desktop">click to place · drag to rotate · ⌘/Ctrl move</span>
+                <span className="hero-preview-hint-touch">tap to place · swipe sideways to rotate</span>
+              </>
+            ))}
           </span>
         </>
       )}

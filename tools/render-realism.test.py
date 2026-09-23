@@ -33,6 +33,12 @@ class SnapshotCameraTests(unittest.TestCase):
             self.assertEqual(camera['fov'], 45)
             self.assertEqual(camera['aperture'], 8)
 
+    def test_detailed_depth_of_field(self):
+        self.assertIs(self.validate(depthOfField=False)['camera']['depthOfField'], False)
+        for value in (None, 0, 'false', []):
+            with self.assertRaises(HTTPException):
+                self.validate(depthOfField=value)
+
     def test_malformed_flag_rejected_before_blender(self):
         for value in (None, 0, 1, 'true', [], {}):
             with self.subTest(value=value), self.assertRaises(HTTPException):

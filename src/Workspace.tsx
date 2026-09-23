@@ -51,7 +51,7 @@ import { DEFAULT_BODY_POSE, normalizePose, poseFromPreset, BODY_POSE_PRESETS, ty
 import { levelFocusDirection } from './render/focusCamera'
 import { DEFAULT_BODY_APPEARANCE, normalizeAppearance, type BodyAppearance } from './render/bodyAppearance'
 import { DEFAULT_BODY_SHAPE, normalizeShape, clampShapeValue, type BodyShapeKey, type BodyShape } from './render/bodyShape'
-import { regionLabel, type BodyRegionId } from './render/bodyRegions'
+import { type BodyRegionId } from './render/bodyRegions'
 import RadialShapeMenu from './RadialShapeMenu'
 import type { RegionFraming } from './ModelWithUVTattoo'
 import type { SurfaceAnchor } from './render/surfacePlacement'
@@ -422,7 +422,8 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
     const frozenContract = structuredClone(contract)
     const inkBlob = decalVisible && placement?.hasPlaced && placement.visible
       ? await bakeInkLayer({ tattooImage: placement.imageSource ?? resolveTattooSource(uploadedImage), center: placement.center,
-          scaleUV: placement.scaleUV, rotationRad: placement.rotationRad, surface: placement.surface, signal: options?.signal })
+          scaleUV: placement.scaleUV, rotationRad: placement.rotationRad, surface: placement.surface,
+          size: options?.snapshot || qualityTier === 'final' ? 4096 : 2048, signal: options?.signal })
       : await blankInkLayer()
     options?.signal?.throwIfAborted()
     return { contract: frozenContract, inkBlob }
@@ -864,6 +865,8 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
     return (
       <div style={{ position: 'relative', width: '100%', minHeight: '100vh' }}>
         <ScenesDashboard
+          session={session}
+          onSignOut={() => onSignOut()}
           onSelectScene={loadScene}
           onOpenLanding={() => afterSaving(onHome)}
         />
@@ -947,11 +950,9 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
       <div className="editor-body-row">
         <EditorLeftPanel currentImage={uploadedImage}
           onChooseArtwork={(source) => { setUploadedImage(source); setDecalVisible(true); setInspectorTab('tattoo'); setPanelRegions([]); uvPlacementRef.current?.placeInView() }}
-          disabled={snapshot.open || modelLoading} bodyLabel={regionLabel(isolateRegion)}
-          activeTab={inspectorTab} onSelect={(tab) => { setInspectorTab(tab); setPanelRegions([]) }}
+          disabled={snapshot.open || modelLoading}
           collapsed={sidebarCollapsed} onToggleCollapsed={() => setSidebarCollapsed(value => !value)}
-          tattooVisible={decalVisible} onToggleTattoo={() => setDecalVisible(value => !value)}
-          studioLabel={studio.mode === 'sweep' ? 'Studio sweep' : 'Simple background'} />
+          />
 
         <div className="editor-canvas-host">
           {!photoMode && <ViewportControls disabled={snapshot.open || modelLoading}

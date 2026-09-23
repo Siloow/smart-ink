@@ -1,0 +1,78 @@
+/* The finished image and artist benefits share one editorial rhythm. */
+.landing .render-showcase {
+  display: grid;
+  grid-template-columns: minmax(0, .8fr) minmax(0, 1.35fr);
+  gap: 48px 64px;
+  align-items: center;
+  padding-top: 104px;
+  padding-bottom: 64px;
+  scroll-margin-top: 96px;
+}
+.render-showcase-intro { position: relative; z-index: 1; }
+.landing .render-showcase h2 {
+  font-size: clamp(34px, 4.4vw, 58px);
+  line-height: 1.06;
+  font-weight: 500;
+  letter-spacing: -.045em;
+}
+.render-showcase h2 span { color: #b7b5bd; }
+.render-showcase-description { max-width: 31ch; margin: 26px 0 28px; color: var(--fg-dim); font-size: 16px; line-height: 1.7; }
+.render-story-link { display: inline-flex; align-items: center; gap: 16px; padding-block: 10px; color: var(--fg); font-size: 13px; text-decoration: none; border-bottom: 1px solid var(--hairline-strong); }
+.render-story-link span { color: var(--fg-faint); }
+.render-story-link:hover { color: var(--accent); }
+.render-showcase-figure { min-width: 0; margin: 0; position: relative; }
+.render-showcase-stage { position: relative; display: grid; place-items: center; min-height: 540px; isolation: isolate; }
+.render-showcase-stage::before { content: ''; position: absolute; z-index: -1; inset: 5% -9%; background: radial-gradient(ellipse, rgba(182, 137, 106, .075), transparent 68%); pointer-events: none; }
+.render-showcase-image { display: block; width: 100%; height: auto; max-height: 790px; object-fit: contain; opacity: 0; }
+.render-showcase-stage--ready .render-showcase-image { opacity: 1; }
+.render-showcase-stage--ready { min-height: 0; }
+.render-showcase-pending { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 30px; background: radial-gradient(ellipse at 50% 48%, #27232a 0%, #171619 40%, transparent 72%); }
+.render-study-label { margin-bottom: 24px; color: var(--fg-faint); font-size: 10px; letter-spacing: .18em; text-transform: uppercase; }
+.render-showcase-pending p { margin: 0 0 14px; color: #b7b5bd; font-size: clamp(28px, 4vw, 44px); font-weight: 400; letter-spacing: -.04em; }
+.render-showcase-pending > span:last-child { color: var(--fg-dim); font-size: 12px; }
+.render-showcase-caption { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding-top: 18px; margin-top: 16px; border-top: 1px solid var(--hairline); color: var(--fg-faint); font-size: 11px; line-height: 1.6; }
+.render-showcase-caption a { display: inline-flex; align-items: center; gap: 12px; color: var(--fg-dim); text-decoration: none; min-height: 36px; }
+.render-showcase-caption a:hover { color: var(--fg); }
+.render-showcase-bridge { grid-column: 1 / -1; display: flex; align-items: center; gap: 18px; margin: 12px 0 0; color: var(--fg-faint); font-size: 12px; }
+.render-showcase-bridge span { width: 48px; height: 1px; background: var(--hairline-strong); }
+.landing .render-showcase[data-orientation="landscape"] { grid-template-columns: 1fr; }
+.render-showcase[data-orientation="landscape"] .render-showcase-intro { display: grid; grid-template-columns: 1fr 1fr; gap: 0 64px; align-items: center; }
+.render-showcase[data-orientation="landscape"] .section-eyebrow { grid-column: 1 / -1; }
+.render-showcase[data-orientation="landscape"] h2 { grid-row: 2 / 4; }
+.render-showcase[data-orientation="landscape"] .render-showcase-description { margin: 0 0 16px; max-width: 38ch; }
+.render-showcase[data-orientation="landscape"] .render-story-link { justify-self: start; }
+.landing .artist-benefits { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.35fr); gap: 64px; align-items: start; padding-top: 76px; padding-bottom: 100px; scroll-margin-top: 96px; }
+.artist-benefits .section-head { margin: 0; max-width: 380px; }
+.landing .artist-benefits h2 { font-weight: 500; font-size: clamp(30px, 3.3vw, 42px); letter-spacing: -.035em; line-height: 1.12; }
+.artist-benefits .section-lead { max-width: 30ch; margin-top: 23px; }
+.artist-benefits-list { list-style: none; margin: 0; padding: 0; }
+.artist-benefit { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 22px; padding: 29px 0; border-bottom: 1px solid var(--hairline); }
+.artist-benefit:first-child { padding-top: 0; }
+.artist-benefit:last-child { border-bottom: 0; padding-bottom: 0; }
+.artist-benefit-category { padding-top: 5px; color: #b7a28f; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; }
+.landing .artist-benefit h3 { margin: 0 0 12px; font-size: 21px; font-weight: 500; line-height: 1.25; letter-spacing: -.02em; }
+.artist-benefit-copy { color: var(--fg-dim); font-size: 15px; line-height: 1.7; max-width: 45ch; }
+.render-showcase a:focus-visible { outline: 2px solid var(--accent); outline-offset: 5px; }
+@media (max-width: 980px) {
+  .landing .render-showcase, .landing .artist-benefits { column-gap: 32px; }
+  .render-showcase-stage { min-height: 420px; }
+  .render-showcase-stage--ready { min-height: 0; }
+  .artist-benefit { grid-template-columns: 1fr; gap: 10px; }
+  .artist-benefit-category { padding-top: 0; }
+}
+@media (max-width: 700px) {
+  .landing .render-showcase, .landing .artist-benefits { grid-template-columns: 1fr; gap: 36px; padding-top: 52px; padding-bottom: 52px; }
+  .landing .render-showcase h2 { font-size: clamp(38px, 9vw, 54px); }
+  .render-showcase-description { max-width: 40ch; margin-top: 22px; margin-bottom: 14px; }
+  .render-showcase-stage { min-height: 260px; }
+  .render-showcase-stage--ready { min-height: 0; }
+  .render-showcase-image { max-height: 740px; }
+  .render-showcase-caption { flex-wrap: wrap; gap: 6px 18px; }
+  .render-showcase-caption a, .render-story-link { min-height: 44px; }
+  .render-showcase-bridge { align-items: flex-start; line-height: 1.6; }
+  .render-showcase-bridge span { flex-shrink: 0; margin-top: 9px; width: 26px; }
+  .render-showcase[data-orientation="landscape"] .render-showcase-intro { display: block; }
+  .render-showcase[data-orientation="landscape"] .render-showcase-description { margin-top: 22px; }
+  .artist-benefits .section-head, .artist-benefits .section-lead { max-width: 38ch; }
+  .artist-benefit { padding-block: 26px; }
+}

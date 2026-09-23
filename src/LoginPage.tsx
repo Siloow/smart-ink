@@ -99,7 +99,7 @@ export default function LoginPage({ onAuthenticated, onBackToLanding, onOpenInvi
               ← Back
             </button>
           )}
-          <div className="login-logo" aria-hidden />
+          <img className="login-logo" src="/brand-droplet.svg" alt="Smart Ink" width={100} height={120} />
           <p className="beta-eyebrow">Members</p>
           <h2>Welcome back</h2>
           <p className="login-subtitle">

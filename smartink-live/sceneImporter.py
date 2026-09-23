@@ -1924,10 +1924,10 @@ BODY_HAIR_LEVELS: Dict[str, float] = {
     "medium": 1.0,
     "heavy": 1.8,
 }
-BODY_HAIR_DEFAULTS: Dict[str, str] = {"body_full": "medium", "body_full_female": "vellus"}
+BODY_HAIR_DEFAULTS: Dict[str, str] = {"body_full": "vellus", "body_full_female": "vellus"}
 DEFAULT_BODY_HAIR = "medium"
 
-VELLUS_LENGTH_M = 0.0028
+VELLUS_LENGTH_M = 0.0008
 VELLUS_THICKNESS_M = 0.000025      # ~25 microns: vellus is a third of a scalp hair
 VELLUS_PARENTS_PER_M2 = 5200
 VELLUS_CHILDREN = 40               # ~200k strands over a whole body
@@ -2079,9 +2079,11 @@ def _add_body_hair_system(
     settings.child_length_threshold = 0.35
     settings.child_radius = length * 0.9
     settings.clump_factor = 0.0
-    settings.roughness_2 = 0.03
+    # Body-hair displacement is in local units: bound it to strand length.
+    # Fixed centimetre-sized offsets create a halo around sub-millimetre fuzz.
+    settings.roughness_2 = length * 0.12
     settings.roughness_2_size = 0.35
-    settings.roughness_endpoint = 0.05 if name == "vellus" else 0.015
+    settings.roughness_endpoint = length * (0.18 if name == "vellus" else 0.12)
 
     settings.radius_scale = thickness
     settings.root_radius = 1.0
@@ -3001,9 +3003,9 @@ CELL_FREQ = 650.0          # ~1.5 mm cells
 CELL_FINE_FREQ = 1450.0    # secondary network inside the primary cells
 PORE_FREQ = 520.0          # ~2 mm pore spacing, thinned by a density mask
 CREASE_FREQ = 170.0        # ~6 mm creases, deepest over joints
-RELIEF_DEPTH_M = 0.00022   # shallow surface texture; anatomy stays in the sculpt bake
-SKIN_SSS_WEIGHT = 0.85     # random-walk skin wants to own most of the diffuse lobe
-SKIN_SSS_SCALE_M = 0.003   # restrained red transport keeps tattoos and creases legible
+RELIEF_DEPTH_M = 0.00012   # shallow surface texture; anatomy stays in the sculpt bake
+SKIN_SSS_WEIGHT = 0.65     # retain surface definition alongside light transport
+SKIN_SSS_SCALE_M = 0.0015   # restrained red transport keeps tattoos and creases legible
 
 
 def _math(mat, op: str, a, b=None, clamp: bool = False, location=(0, 0)):
@@ -3102,7 +3104,7 @@ def _rebuild_micro_relief(mat: bpy.types.Material, bsdf, world_scale: float, con
         # The old noise chain stays in at low weight as sub-millimetre grain.
         height = _math(mat, "ADD", height, _math(mat, "MULTIPLY", old_height, 0.15, location=(120, -1300)), location=(440, -1000))
     links.new(height, height_in)
-    _set(bump, "Strength", 0.65)
+    _set(bump, "Strength", 0.4)
     _set(bump, "Distance", RELIEF_DEPTH_M * world_scale)
 
     # The grooves and pores are matte; the plateaus between them carry the
@@ -3559,7 +3561,7 @@ def apply_uv_ink_layer(body: bpy.types.Object, ink_path: str) -> None:
     ink_shift.label = "Ink under epidermis"
     ink_shift.data_type = "RGBA"
     ink_shift.blend_type = "MIX"
-    ink_shift.inputs["Factor"].default_value = 0.08
+    ink_shift.inputs["Factor"].default_value = 0.035
     if mix.inputs["A"].is_linked:
         links.new(mix.inputs["A"].links[0].from_socket, ink_shift.inputs["B"])
     else:
@@ -3601,7 +3603,7 @@ def _apply_ink_surface_response(mat: bpy.types.Material, bsdf, ink_tex) -> None:
         amount = nodes.new(type="ShaderNodeMath")
         amount.operation = "MULTIPLY"
         amount.label = "Ink roughness amount"
-        amount.inputs[1].default_value = 0.06
+        amount.inputs[1].default_value = 0.025
         links.new(ink_tex.outputs["Alpha"], amount.inputs[0])
         rough_mix = nodes.new(type="ShaderNodeMath")
         rough_mix.label = "Roughness under ink"
@@ -3772,6 +3774,9 @@ def apply_camera_realism(
     cam_data: Dict[str, Any],
 ) -> None:
     """Focus on the tattoo and open the aperture to a real portrait f-stop."""
+    if cam_data.get("depthOfField") is False:
+        cam_obj.data.dof.use_dof = False
+        return
     # The lens compression moved the camera; without this its matrix_world is
     # still the pre-dolly one and every projection below is computed against a
     # camera that is no longer there.

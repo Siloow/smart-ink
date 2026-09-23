@@ -11,7 +11,7 @@ for (const aspect of [1/32,.3,.8,1,1.6,3,32,NaN,Infinity,0,-1]) for (const quali
  const out=snapshotOutput(aspect,quality);assert.equal(Math.max(out.width,out.height),quality==='quick'?960:2560);assert.equal(out.qualityTier,'final');assert.equal(out.samples,quality==='quick'?64:512);assert.ok(out.width>=30&&out.height>=30);
  if(Number.isFinite(aspect)&&aspect>0) assert.ok(Math.abs(out.width/out.height-aspect) < .025);
 }
-const converted=snapshotContract(contract,'detailed');assert.deepEqual(converted.camera.position,contract.camera.position);assert.equal(converted.camera.preserveFraming,true);assert.equal(converted.camera.aperture,8);assert.equal(converted.renderStyle,'cinematic');assert.equal(contract.camera.preserveFraming,undefined);converted.lighting.lights.push({});assert.equal(contract.lighting.lights.length,0);
+const converted=snapshotContract(contract,'detailed');assert.equal(converted.camera.depthOfField,false);assert.equal(snapshotContract(contract,'quick').camera.depthOfField,true);assert.deepEqual(converted.camera.position,contract.camera.position);assert.equal(converted.camera.preserveFraming,true);assert.equal(converted.camera.aperture,8);assert.equal(converted.renderStyle,'cinematic');assert.equal(contract.camera.preserveFraming,undefined);converted.lighting.lights.push({});assert.equal(contract.lighting.lights.length,0);
 // Duplicate clicks, frozen ink/scene, quality changes, previous image and history.
 {
  let builds=0,calls=[],revoked=[],events=0;const pending=[],history=[];

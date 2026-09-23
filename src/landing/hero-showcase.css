@@ -1,0 +1,55 @@
+.hero-showcase {
+  position: relative;
+  aspect-ratio: 14 / 13;
+  isolation: isolate;
+}
+.hero-render-image {
+  display: block;
+  width: 100%;
+  height: auto;
+  /* The Blender image includes its own transparent shoulder fade. */
+}
+.hero-render-caption {
+  position: absolute;
+  top: 12%;
+  right: 9%;
+  margin: 0;
+  color: var(--fg-dim);
+  font-size: 10px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.hero-showcase-switch {
+  position: absolute;
+  z-index: 3;
+  bottom: 3%;
+  left: 60%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 3px;
+  padding: 4px;
+  border: 1px solid rgba(255,255,255,.14);
+  border-radius: 999px;
+  background: var(--bg-primary);
+  white-space: nowrap;
+}
+.hero-showcase-switch button {
+  padding: 9px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fg-dim);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.hero-showcase-switch button[aria-pressed="true"] {
+  background: rgba(255,255,255,.1);
+  color: var(--fg);
+}
+.hero-showcase-switch button:hover { color: var(--fg); }
+.hero-showcase-switch button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+@media (max-width: 980px) {
+  .hero-showcase-switch { left: 50%; }
+  .hero-render-caption { right: 8%; font-size: 9px; }
+}

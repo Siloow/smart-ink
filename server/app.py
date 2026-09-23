@@ -181,6 +181,8 @@ def validate_contract(data: bytes) -> dict:
     _number(camera.get("aspect"), "camera.aspect", 0.01, 100)
     if "preserveFraming" in camera and type(camera["preserveFraming"]) is not bool:
         _invalid("camera.preserveFraming must be true or false")
+    if "depthOfField" in camera and type(camera["depthOfField"]) is not bool:
+        _invalid("camera.depthOfField must be true or false")
     for name, bounds in {"lensMm": (1, 1000), "aperture": (0.1, 128), "focusDistance": (0.001, 100000)}.items():
         if name in camera:
             _number(camera[name], f"camera.{name}", *bounds)

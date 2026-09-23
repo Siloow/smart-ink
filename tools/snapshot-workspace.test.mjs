@@ -88,6 +88,7 @@ for (const aspect of [.4, 1, 16 / 9, 2.5]) for (const quality of ['quick', 'deta
   assert.equal(shot.inkBlob, f.ink);
   assert.equal(f.calls.baked[0].surface, f.placement.surface, 'actual surface geometry, tint and opacity reach the baker');
   assert.equal(f.calls.baked[0].rotationRad, f.placement.rotationRad);
+  assert.equal(f.calls.baked[0].size, 4096, 'Both snapshot qualities retain full-resolution ink when rerendering');
   assert.equal(f.calls.baked[0].signal, signal); assert.equal(f.calls.baked[0].tattooImage, f.scope.uploadedImage);
   f.dispose();
 }

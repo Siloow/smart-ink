@@ -72,6 +72,8 @@ export interface RenderContract {
     preserveFraming?: boolean;
     /** f-stop for the cinematic render's depth of field. Defaults to 2.8. */
     aperture?: number;
+    /** Disable lens blur for sharp tattoo inspection. */
+    depthOfField?: boolean;
     /** Focus distance override; by default focus is pulled to the tattoo itself. */
     focusDistance?: number;
   };
