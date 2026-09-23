@@ -1,0 +1,69 @@
+name: RunPod render image
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [beta, main, codex/runpod-worker]
+    paths:
+      - 'server/**'
+      - 'smartink-live/sceneImporter.py'
+      - 'smartink-live/body_full*.blend'
+      - 'smartink-live/assets/skins.blend'
+      - 'tools/runpod-worker.test.py'
+      - 'tools/runpod-smoke.py'
+      - '.github/workflows/render-image.yml'
+  pull_request:
+    paths:
+      - 'server/**'
+      - 'smartink-live/**'
+      - 'tools/runpod-worker.test.py'
+      - 'tools/runpod-smoke.py'
+      - '.github/workflows/render-image.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  worker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r server/runpod/requirements.txt
+      - run: python tools/runpod-worker.test.py
+      - run: python tools/render-server.test.py
+      - uses: docker/setup-buildx-action@v3
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: server/runpod/Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: ghcr.io/smartink-app/smart-ink-render:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Test installed SDK and bundled assets
+        run: |
+          docker run --rm --entrypoint python ghcr.io/smartink-app/smart-ink-render:${{ github.sha }} -c 'import runpod; from server.app import readiness; from server.runpod.handler import handler; assert readiness()["ready"], readiness(); print("Worker imports and assets ready")'
+      - name: Render a real image from the Linux container
+        run: |
+          docker run --rm --entrypoint python -e SMARTINK_RENDER_DEVICE=CPU \
+            -v "$PWD/tools/runpod-smoke.py:/app/tools/runpod-smoke.py:ro" \
+            ghcr.io/smartink-app/smart-ink-render:${{ github.sha }} tools/runpod-smoke.py
+      - name: Publish immutable image
+        if: github.event_name != 'pull_request'
+        run: docker push ghcr.io/smartink-app/smart-ink-render:${{ github.sha }}
