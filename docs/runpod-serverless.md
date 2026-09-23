@@ -72,7 +72,11 @@ are omitted. Larger results will need private object storage, not larger JSON.
 While running, read `/stream` for `progress`, `preview`, and `final` events. Sample
 updates are throttled to once per second, with completed samples always emitted.
 RunPod's completed `/status` response also contains the aggregated event list;
-the final event contains a base64 PNG. Queue status comes from RunPod. The worker
+the final event contains a base64 PNG up to 512 KiB. Larger images are sent as
+ordered `image_chunk` events, each containing separately base64-encoded bytes and
+an `index` and `total`; the final event then contains `chunkCount` and `bytes`.
+Decode each chunk separately and concatenate its bytes in index order. This keeps
+each streamed message below RunPod's 1 MB limit. Queue status comes from RunPod. The worker
 does not claim to know a job's position in the queue.
 
 Cancel through RunPod's cancellation operation. The async handler cancels its

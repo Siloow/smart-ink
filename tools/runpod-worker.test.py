@@ -117,6 +117,15 @@ print('Rendering | Sample 8/64', flush=True)
             with self.assertRaises(ValueError):
                 await self.collect(self.job())
 
+    async def test_large_image_chunks_reassemble_exactly(self):
+        with patch.object(worker, "MAX_INLINE_BYTES", 16):
+            result = await self.collect(self.job())
+        chunks = [event for event in result if event["type"] == "image_chunk"]
+        self.assertEqual([event["index"] for event in chunks], list(range(len(chunks))))
+        self.assertEqual(b"".join(base64.b64decode(event["image"]) for event in chunks), fixtures.png())
+        self.assertEqual(result[-1]["chunkCount"], len(chunks))
+        self.assertEqual(result[-1]["bytes"], len(fixtures.png()))
+
     async def test_sdk_consumes_stream_and_reports_failures(self):
         from runpod.serverless.modules.rp_job import run_job_generator
         from runpod.serverless.modules.rp_logger import RunPodLogger

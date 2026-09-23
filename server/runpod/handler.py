@@ -16,6 +16,7 @@ from server import app as renderer
 MAX_INK_BYTES = 6 * 1024 * 1024
 MAX_RESULT_BYTES = 5 * 1024 * 1024
 MAX_PREVIEW_BYTES = 512 * 1024
+MAX_INLINE_BYTES = 512 * 1024  # RunPod limits each streamed message to 1 MB.
 
 
 def validate_input(job):
@@ -77,8 +78,18 @@ async def handler(job):
                 output = await renderer.run_blender_render(path, None, emit)
                 if output.stat().st_size > MAX_RESULT_BYTES:
                     raise ValueError("Rendered PNG exceeds 5 MiB; reduce output dimensions")
-                emit({"type": "final", "mimeType": "image/png",
-                      "image": base64.b64encode(output.read_bytes()).decode("ascii")})
+                image = output.read_bytes()
+                if len(image) <= MAX_INLINE_BYTES:
+                    emit({"type": "final", "mimeType": "image/png",
+                          "image": base64.b64encode(image).decode("ascii")})
+                else:
+                    count = (len(image) + MAX_INLINE_BYTES - 1) // MAX_INLINE_BYTES
+                    for index in range(count):
+                        chunk = image[index * MAX_INLINE_BYTES:(index + 1) * MAX_INLINE_BYTES]
+                        emit({"type": "image_chunk", "index": index, "total": count,
+                              "image": base64.b64encode(chunk).decode("ascii")})
+                    emit({"type": "final", "mimeType": "image/png", "chunkCount": count,
+                          "bytes": len(image)})
             finally:
                 events.put_nowait(None)
 

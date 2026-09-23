@@ -36,13 +36,22 @@ async def smoke(output):
     from server.app import validate_png
     job = {"id": "smartink-smoke", **test_job()}
     final = False
+    chunks = []
     async for result in run_job_generator(handler, job):
         if "error" in result:
             raise RuntimeError(result["error"])
         event = result["output"]
         print(json.dumps({k: v for k, v in event.items() if k != "image"}), flush=True)
+        if event["type"] == "image_chunk":
+            assert event["index"] == len(chunks)
+            chunks.append(base64.b64decode(event["image"], validate=True))
         if event["type"] == "final":
-            image = base64.b64decode(event["image"], validate=True)
+            if "image" in event:
+                image = base64.b64decode(event["image"], validate=True)
+            else:
+                assert len(chunks) == event["chunkCount"]
+                image = b"".join(chunks)
+                assert len(image) == event["bytes"]
             assert validate_png(image) == (256, 256)
             output.write_bytes(image)
             final = True
