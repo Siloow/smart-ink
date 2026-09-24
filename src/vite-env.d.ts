@@ -17,3 +17,7 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
+
+interface ImportMetaEnv {
+  readonly VITE_RENDER_BACKEND?: "runpod" | "http";
+}

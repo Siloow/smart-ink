@@ -110,7 +110,7 @@ export function createSnapshotSession({ render, retain, revoke = URL.revokeObjec
       controller.abort();
       controller = null;
       releasePreview();
-      update({ previewUrl: null, progress: null, status: 'cancelled', message: 'Snapshot cancelled. You can try again.' });
+      update({ previewUrl: null, progress: null, status: 'cancelled', message: 'Stopped waiting. Cancellation requested; the render may still finish in the background.' });
     },
     close() {
       if (!state.open && !controller) return;
