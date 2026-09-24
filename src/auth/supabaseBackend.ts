@@ -124,6 +124,18 @@ async function assertInvited(email: string): Promise<void> {
   if (status !== 'invited' && status !== 'active') throw new Error(accessMessage(status));
 }
 
+/** Passwords authenticate through Supabase; the existing beta gate still applies. */
+export async function signInWithPassword(rawEmail: string, password: string): Promise<BetaSession> {
+  const email = normalizeEmail(rawEmail);
+  if (!isValidEmail(email)) throw new Error('Enter a valid email address.');
+  if (!password) throw new Error('Enter your password.');
+  const { data, error } = await getSupabase().auth.signInWithPassword({ email, password });
+  if (error) throw new Error('Could not sign in. Check your email and password.');
+  const state = await resolveAccess(data.session);
+  if (!state.session) throw new Error(state.accessError ?? accessMessage('none'));
+  return state.session;
+}
+
 export const supabaseBackend: BetaAuthBackend = {
   mode: 'supabase',
 

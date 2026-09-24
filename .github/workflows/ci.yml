@@ -37,6 +37,9 @@ jobs:
       - name: RunPod frontend regression tests
         run: node tools/runpod-render-service.test.mjs
 
+      - name: Password login access checks
+        run: node tools/password-login.test.mjs
+
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x

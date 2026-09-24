@@ -1,0 +1,20 @@
+import assert from 'node:assert/strict';
+import { build } from 'esbuild';
+let status='active', authError=null, rpcError=null, session={user:{id:'owner-id',email:'sil@smartink.app',created_at:'2026-09-24',user_metadata:{}}};
+let calls=[],signouts=0;
+globalThis.__passwordClient={auth:{signInWithPassword:async args=>{calls.push(args);return {data:{session},error:authError};},signOut:async()=>{signouts++;return{};}},rpc:async name=>{assert.equal(name,'my_access');return {data:status,error:rpcError};}};
+const result=await build({entryPoints:['src/auth/supabaseBackend.ts'],bundle:true,write:false,format:'esm',platform:'node',define:{'import.meta.env':'{}'},plugins:[{name:'auth-fixture',setup(b){b.onResolve({filter:/supabaseClient$/},()=>({path:'client',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:'export const getSupabase=()=>globalThis.__passwordClient; export const isSupabaseConfigured=()=>true;'}));}}]});
+const {signInWithPassword}=await import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`);
+try{
+ const account=await signInWithPassword(' SIL@smartink.app ','test-only-password');assert.equal(account.userId,'owner-id');assert.deepEqual(calls,[{email:'sil@smartink.app',password:'test-only-password'}]);assert.equal(account.isAdmin,undefined,'Password login does not manufacture admin privileges');
+ for(status of ['waitlisted','revoked','none']){await assert.rejects(signInWithPassword('sil@smartink.app','test-only-password'));}assert.equal(signouts,3,'Non-active accounts are signed out');
+ status='active';rpcError={message:'Unavailable'};await assert.rejects(signInWithPassword('sil@smartink.app','test-only-password'),/Could not check beta access/);assert.equal(signouts,4);rpcError=null;
+ authError={message:'Sensitive backend detail'};await assert.rejects(signInWithPassword('sil@smartink.app','wrong'),/Check your email and password/);authError=null;
+ const before=calls.length;await assert.rejects(signInWithPassword('admin','test-only-password'),/valid email/);await assert.rejects(signInWithPassword('sil@smartink.app',''),/password/);assert.equal(calls.length,before);
+ session=null;await assert.rejects(signInWithPassword('sil@smartink.app','test-only-password'));
+ console.log('Password login passed: real auth call, normalized email, active gate, denied/revoked access, failed authorization, invalid credentials, empty session, no admin elevation.');
+}finally{delete globalThis.__passwordClient;}
+const ui=await build({jsx:'automatic',banner:{js:'import { createRequire } from "node:module"; const require = createRequire(process.cwd()+"/package.json");'},stdin:{contents:"export {default as LoginPage} from './src/LoginPage.tsx'; export {createElement} from 'react'; export {renderToStaticMarkup} from 'react-dom/server';",resolveDir:process.cwd()},bundle:true,write:false,format:'esm',platform:'node',plugins:[{name:'login-ui',setup(b){b.onResolve({filter:/auth\/betaAuthService$/},()=>({path:'auth',namespace:'ui'}));b.onLoad({filter:/.*/,namespace:'ui'},()=>({contents:'export const authMode=()=>globalThis.__loginMode; export const DEV_ADMIN_HANDLE="admin"; export const isDevAdminHandle=()=>false; export const requestEmailCode=async()=>({}); export const signInAsDevAdmin=async()=>({}); export const signInWithGoogle=async()=>null; export const verifyEmailCode=async()=>({}); export const signInWithPassword=async()=>({});'}));}}]});
+const {LoginPage,createElement,renderToStaticMarkup}=await import(`data:text/javascript;base64,${Buffer.from(ui.outputFiles[0].text).toString('base64')}`);
+try {for(const mode of ['supabase','demo','unconfigured']){globalThis.__loginMode=mode;const html=renderToStaticMarkup(createElement(LoginPage,{onAuthenticated(){}}));assert.equal(html.includes('type="password"'),mode==='supabase');assert.equal(html.includes('Sign in as local admin'),mode==='demo');if(mode==='supabase')assert.match(html,/autoComplete="current-password"/);}}finally{delete globalThis.__loginMode;}
+console.log('Login UI passed: hosted-only masked password form, password-manager autocomplete, no production demo shortcut.');
