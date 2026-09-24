@@ -1,0 +1,16 @@
+**
+!server/
+!server/app.py
+!server/requirements.txt
+!server/runpod/
+!server/runpod/handler.py
+!server/runpod/check_gpu.py
+!server/runpod/requirements.txt
+!server/runpod/textures/
+!server/runpod/textures/*.png
+!smartink-live/
+!smartink-live/sceneImporter.py
+!smartink-live/body_full.blend
+!smartink-live/body_full_female.blend
+!smartink-live/assets/
+!smartink-live/assets/skins.blend

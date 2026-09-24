@@ -4,7 +4,7 @@ const img='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAA
 const contract={schemaVersion:1,bodyMeshId:'body_full',inkTextureUrl:'ink.png',lookId:'studio_softbox',output:{width:512,height:512,qualityTier:'preview'}};
 const config={url:'https://db.test',serviceKey:'server-only',runpodKey:'gpu-secret',endpoint:'endpoint',origins:['https://app.test']};
 const assert=(x:unknown,message='Assertion failed')=>{if(!x)throw new Error(message);};
-function setup(options: {anonymous?:boolean; active?:boolean; missing?:boolean; reserve?:boolean; limited?:boolean; status?:string; failedUpload?:boolean}={}) {
+function setup(options: {anonymous?:boolean; active?:boolean; missing?:boolean; reserve?:boolean; limited?:boolean; status?:string; failedUpload?:boolean; direct?:boolean; wrongPath?:boolean; wrongSize?:boolean; signFailure?:boolean}={}) {
  const calls:{url:string;body:unknown;method:string}[]=[];
  const row={id:jobId,owner:uid,status:'IN_QUEUE',runpod_id:'provider-job',contract,result_path:null,expires_at:new Date(Date.now()+100000).toISOString()};
  const handler=createHandler(config,(async(input,init)=>{
@@ -19,9 +19,11 @@ function setup(options: {anonymous?:boolean; active?:boolean; missing?:boolean; 
    if(method==='PATCH')Object.assign(row,body);return Response.json(options.missing?[]:[row]);
   }
   if(url.endsWith('/run'))return Response.json({id:'provider-job',status:'IN_QUEUE'});
-  if(url.includes('/status/'))return Response.json({status:options.status??'IN_PROGRESS',output:[{type:'final',image:img}]});
+  if(url.includes('/status/'))return Response.json({status:options.status??'IN_PROGRESS',output:options.direct?[{type:'final',path:options.wrongPath?'another-owner/image.png':`${uid}/${jobId}.png`,mimeType:'image/png',width:512,height:512,bytes:8*1024*1024}]:[{type:'final',image:img}]});
   if(url.includes('/stream/'))return Response.json({stream:[{output:{type:'progress',phase:'final',sample:3,total:16}},{output:{type:'preview',image:img}}]});
   if(url.includes('/cancel/'))return Response.json({status:'CANCELLED'});
+  if(url.includes('/object/upload/sign/'))return options.signFailure?new Response(null,{status:500}):Response.json({url:`/object/upload/sign/renders/${uid}/${jobId}.png?token=upload-only`});
+  if(method==='HEAD')return new Response(null,{status:options.failedUpload?404:200,headers:{'content-length':String(options.wrongSize?1:8*1024*1024),'content-type':'image/png'}});
   if(url.includes('/storage/'))return new Response(null,{status:options.failedUpload?500:200});
   if(url.includes('/render_history?'))return new Response(null,{status:201});
   throw new Error(`Unexpected fetch ${url}`);
@@ -62,4 +64,33 @@ Deno.test('split PNG reconstructs, duplicate or missing chunks rejected',()=>{
  const bytes=Uint8Array.from(atob(img),c=>c.charCodeAt(0));const chunks=[bytes.slice(0,31),bytes.slice(31)].map((c,index)=>({type:'image_chunk',index,total:2,image:btoa(String.fromCharCode(...c))}));
  const end={type:'final',chunkCount:2,bytes:bytes.length};assert(finalImage([...chunks,end]).every((v,i)=>v===bytes[i]));
  for(const bad of [[chunks[0],end],[chunks[0],chunks[0],end]]){let failed=false;try{finalImage(bad);}catch{failed=true;}assert(failed);}
+});
+
+Deno.test('signed upload is scoped to owner and never returned to browser',async()=>{
+ const s=setup();const response=await s.request('submit',{contract,ink_base64:img,result_upload:{url:'https://evil.test'}});
+ const payload=s.calls.find(c=>c.url.endsWith('/run'))!.body as {input:{result_upload:{url:string;path:string}}};
+ assert(payload.input.result_upload.path===`${uid}/${jobId}.png`);
+ assert(payload.input.result_upload.url===`https://db.test/storage/v1/object/upload/sign/renders/${uid}/${jobId}.png?token=upload-only`);
+ assert(!JSON.stringify(payload).includes('server-only'));
+ assert(!(await response.text()).includes('upload-only'));
+});
+Deno.test('signing failure releases reservation without starting GPU',async()=>{
+ const s=setup({signFailure:true});assert((await s.request('submit',{contract,ink_base64:img})).status===503);
+ assert(!s.calls.some(c=>c.url.endsWith('/run')));assert(s.calls.some(c=>c.method==='PATCH' && (c.body as {status:string}).status==='FAILED'));
+});
+Deno.test('large stored image uses metadata verification, no image proxy',async()=>{
+ const s=setup({status:'COMPLETED',direct:true});const response=await s.request('status');assert(response.status===200);
+ assert((await response.json()).path===`${uid}/${jobId}.png`);
+ const storage=s.calls.filter(c=>c.url.includes('/storage/'));assert(storage.length===1 && storage[0].method==='HEAD');
+ assert(s.calls.some(c=>c.url.includes('/render_history?')));
+});
+Deno.test('missing, mismatched or foreign stored image cannot complete job',async()=>{
+ for(const option of [{wrongPath:true},{wrongSize:true},{failedUpload:true}]){
+  const s=setup({status:'COMPLETED',direct:true,...option});assert((await s.request('status')).status>=400);
+  assert(!s.calls.some(c=>c.method==='PATCH' || c.url.includes('/render_history?')));
+  if(option.wrongPath)assert(!s.calls.some(c=>c.url.includes('/storage/')));
+ }
+});
+Deno.test('Detailed 2560 dimensions accepted without rescaling',()=>{
+ validateInput({contract:{...contract,output:{width:2560,height:1440,qualityTier:'final',samples:512}},ink_base64:img});
 });

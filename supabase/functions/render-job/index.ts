@@ -4,7 +4,8 @@ type Job = { id: string; owner: string; status: string; runpod_id: string | null
 type Config = { url: string; serviceKey: string; runpodKey: string; endpoint: string; origins: string[] };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MAX_BODY = 9 * 1024 * 1024;
-const MAX_IMAGE = 5 * 1024 * 1024;
+const MAX_IMAGE = 5 * 1024 * 1024; // Compatibility with workers returning inline images.
+const MAX_STORED_IMAGE = 50 * 1024 * 1024;
 const terminal = new Set(['COMPLETED', 'FAILED', 'CANCELLED', 'TIMED_OUT']);
 class Fault extends Error { constructor(public status: number, message: string) { super(message); } }
 function object(value: unknown): Obj {
@@ -50,9 +51,9 @@ export function validateInput(body: Obj): Obj {
   if (!['preview','final'].includes(String(output.qualityTier))
     || !Number.isInteger(output.width) || !Number.isInteger(output.height)
     || Number(output.width)<64 || Number(output.height)<64
-    || Number(output.width)>2048 || Number(output.height)>2048
+    || Number(output.width)>2560 || Number(output.height)>2560
     || (output.samples !== undefined && (!Number.isInteger(output.samples) || Number(output.samples)<1 || Number(output.samples)>512)))
-    throw new Fault(400, 'Beta renders support up to 2048 pixels and 512 samples.');
+    throw new Fault(400, 'Beta renders support up to 2560 pixels and 512 samples.');
   png(base64(body.ink_base64, 6 * 1024 * 1024));
   return contract;
 }
@@ -129,7 +130,26 @@ export function createHandler(config: Config, fetcher: typeof fetch = fetch) {
         if(created) {
           // Never retry /run: an ambiguous network failure may already have created a billable job.
           // Its reservation stays locked until expiry; RunPod TTL and execution timeout bound cost.
-          const submitted=await provider('run','POST',{input:{contract,ink_base64:body.ink_base64},policy:{executionTimeout:660000,ttl:900000}});
+          const path=`${user.id}/${id}.png`;
+          // Only the gateway chooses the destination. The worker receives a temporary,
+          // single-object upload capability, never the Supabase service key.
+          let uploadUrl: string;
+          try {
+            const signed=await fetcher(`${config.url}/storage/v1/object/upload/sign/renders/${path}`,{
+              method:'POST',headers:{...adminHeaders,'Content-Type':'application/json','x-upsert':'true'},
+              body:'{}',signal:AbortSignal.timeout(10000),
+            });
+            if(!signed.ok) throw new Error();
+            const data=object(await signed.json());
+            if(typeof data.url!=='string') throw new Error();
+            const url=new URL(`${config.url}/storage/v1${data.url}`);
+            if(url.origin!==new URL(config.url).origin || url.pathname!==`/storage/v1/object/upload/sign/renders/${path}` || !url.searchParams.get('token')) throw new Error();
+            uploadUrl=url.toString();
+          } catch {
+            await db(filter,'PATCH',{status:'FAILED'});
+            throw new Fault(503,'Could not prepare image storage. Please start a new render.');
+          }
+          const submitted=await provider('run','POST',{input:{contract,ink_base64:body.ink_base64,result_upload:{url:uploadUrl,path}},policy:{executionTimeout:660000,ttl:900000}});
           if(typeof submitted.id!=='string' || !/^[a-zA-Z0-9_-]+$/.test(submitted.id)) throw new Fault(502,'Invalid GPU job response.');
           try { await db(filter,'PATCH',{runpod_id:submitted.id,status:'IN_QUEUE'}); }
           catch(error) { await provider(`cancel/${submitted.id}`,'POST').catch(()=>{}); throw error; }
@@ -152,11 +172,30 @@ export function createHandler(config: Config, fetcher: typeof fetch = fetch) {
       if(!job.runpod_id) return json(200,{jobId:id,status:Date.parse(job.expires_at)<Date.now()?'TIMED_OUT':'SUBMITTING'});
       const state=await provider(`status/${job.runpod_id}`);
       if(state.status==='COMPLETED') {
-        const bytes=finalImage(state.output); const {width,height}=png(bytes);
         const path=`${user.id}/${id}.png`;
-        const stored=await fetcher(`${config.url}/storage/v1/object/renders/${path}`,{method:'POST',headers:{...adminHeaders,'Content-Type':'image/png','x-upsert':'true'},body:new Uint8Array(bytes).buffer,signal:AbortSignal.timeout(20000)});
-        if(!stored.ok) throw new Fault(503,'The image is ready but could not be saved. Retry to finish saving.');
         const output=object(job.contract.output);
+        const final=Array.isArray(state.output)?state.output.map(object).findLast(e=>e.type==='final'):undefined;
+        let width: number, height: number;
+        if(final?.path!==undefined) {
+          if(final.path!==path || final.mimeType!=='image/png'
+            || final.width!==output.width || final.height!==output.height
+            || !Number.isInteger(final.bytes) || Number(final.bytes)<45 || Number(final.bytes)>MAX_STORED_IMAGE)
+            throw new Fault(502,'Invalid saved render.');
+          // Verify the exact owned object exists without proxying the full PNG
+          // through the edge function. Never fetch a URL supplied by the worker.
+          const stored=await fetcher(`${config.url}/storage/v1/object/authenticated/renders/${path}`,{
+            method:'HEAD',headers:adminHeaders,signal:AbortSignal.timeout(10000),
+          });
+          if(!stored.ok || Number(stored.headers.get('content-length'))!==final.bytes
+            || stored.headers.get('content-type')?.split(';')[0]!=='image/png')
+            throw new Fault(503,'The saved image is not available yet. Retry to finish saving.');
+          width=Number(final.width); height=Number(final.height);
+        } else {
+          // Keep in-flight jobs from the previous image compatible during rollout.
+          const bytes=finalImage(state.output); ({width,height}=png(bytes));
+          const stored=await fetcher(`${config.url}/storage/v1/object/renders/${path}`,{method:'POST',headers:{...adminHeaders,'Content-Type':'image/png','x-upsert':'true'},body:new Uint8Array(bytes).buffer,signal:AbortSignal.timeout(20000)});
+          if(!stored.ok) throw new Fault(503,'The image is ready but could not be saved. Retry to finish saving.');
+        }
         // Ignore duplicate history IDs on concurrent/retried polls. Users may delete completed history.
         const recorded=await fetcher(`${config.url}/rest/v1/render_history?on_conflict=id`,{method:'POST',headers:{...adminHeaders,'Content-Type':'application/json',Prefer:'resolution=ignore-duplicates'},body:JSON.stringify({id,owner:user.id,source:'cycles',width,height,quality_tier:output.qualityTier,look_id:job.contract.lookId,path}),signal:AbortSignal.timeout(10000)});
         if(!recorded.ok) throw new Fault(503,'Could not save render history. Retry to finish saving.');
@@ -165,7 +204,7 @@ export function createHandler(config: Config, fetcher: typeof fetch = fetch) {
       }
       if(terminal.has(String(state.status))) {
         await db(filter,'PATCH',{status:state.status});
-        return json(200,{jobId:id,status:state.status,error:state.status==='FAILED'?'The render failed. Try a smaller image.':undefined});
+        return json(200,{jobId:id,status:state.status,error:state.status==='FAILED'?'The render could not finish. Please try again.':undefined});
       }
       if(!['IN_QUEUE','IN_PROGRESS'].includes(String(state.status))) throw new Fault(502,'Unknown GPU job state.');
       const stream=await provider(`stream/${job.runpod_id}`);
