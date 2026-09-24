@@ -6,18 +6,24 @@ on:
     branches: [beta, main, codex/runpod-worker, codex/direct-render-storage]
     paths:
       - 'server/**'
+      - 'public/measurements/**'
       - 'smartink-live/sceneImporter.py'
       - 'smartink-live/body_full*.blend'
       - 'smartink-live/assets/skins.blend'
       - 'tools/runpod-worker.test.py'
       - 'tools/runpod-smoke.py'
+      - 'tools/measurement-*.py'
+      - 'tools/fixtures/body-fit-recipes.json'
       - '.github/workflows/render-image.yml'
   pull_request:
     paths:
       - 'server/**'
+      - 'public/measurements/**'
       - 'smartink-live/**'
       - 'tools/runpod-worker.test.py'
       - 'tools/runpod-smoke.py'
+      - 'tools/measurement-*.py'
+      - 'tools/fixtures/body-fit-recipes.json'
       - '.github/workflows/render-image.yml'
 
 permissions:
@@ -38,6 +44,7 @@ jobs:
       - run: pip install -r server/runpod/requirements.txt
       - run: python tools/runpod-worker.test.py
       - run: python tools/render-server.test.py
+      - run: python tools/measurement-server.test.py
       - uses: docker/setup-buildx-action@v3
       - name: Log in to GitHub Container Registry
         if: github.event_name != 'pull_request'
@@ -64,6 +71,14 @@ jobs:
           docker run --rm --entrypoint python -e SMARTINK_RENDER_DEVICE=CPU \
             -v "$PWD/tools/runpod-smoke.py:/app/tools/runpod-smoke.py:ro" \
             ghcr.io/smartink-app/smart-ink-render:${{ github.sha }} tools/runpod-smoke.py
+      - name: Verify native measured bodies and render a fitted image
+        run: |
+          docker run --rm --entrypoint blender -v "$PWD/tools:/app/tools:ro" \
+            ghcr.io/smartink-app/smart-ink-render:${{ github.sha }} \
+            -b -t 2 --python-exit-code 1 --python tools/measurement-blender.test.py
+          docker run --rm --entrypoint python -e SMARTINK_RENDER_DEVICE=CPU \
+            -v "$PWD/tools:/app/tools:ro" \
+            ghcr.io/smartink-app/smart-ink-render:${{ github.sha }} tools/runpod-smoke.py --measured
       - name: Publish immutable image
         if: github.event_name != 'pull_request'
         run: docker push ghcr.io/smartink-app/smart-ink-render:${{ github.sha }}

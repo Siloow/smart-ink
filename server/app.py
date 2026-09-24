@@ -21,6 +21,7 @@ from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from starlette.background import BackgroundTask
+from server.measurement_fit import validate_fit
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LIVE_DIR = Path(os.environ.get("SMARTINK_LIVE_DIR", REPO_ROOT / "smartink-live")).expanduser()
@@ -223,6 +224,13 @@ def validate_contract(data: bytes) -> dict:
         _invalid("Invalid bodyShape")
     for key, value in shape.items():
         _number(value, f"bodyShape.{key}", -1, 1)
+    if "bodyFit" in contract:
+        try:
+            validate_fit(contract["bodyFit"], contract["bodyMeshId"])
+        except ValueError as exc:
+            _invalid(str(exc))
+        if any(value != 0 for value in shape.values()):
+            _invalid("bodyFit replaces bodyShape; they cannot be combined")
     if "bodyPose" in contract:
         pose = contract["bodyPose"]
         if not isinstance(pose, dict) or any(key not in BODY_POSE_BOUNDS for key in pose):

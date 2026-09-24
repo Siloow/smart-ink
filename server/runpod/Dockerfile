@@ -29,6 +29,8 @@ COPY server/requirements.txt /app/server/requirements.txt
 COPY server/runpod/requirements.txt /app/server/runpod/requirements.txt
 RUN pip install --no-cache-dir -r server/runpod/requirements.txt
 COPY server/app.py /app/server/app.py
+COPY server/measurement_fit.py /app/server/measurement_fit.py
+COPY public/measurements/ /app/public/measurements/
 COPY server/runpod/handler.py /app/server/runpod/handler.py
 COPY server/runpod/check_gpu.py /app/server/runpod/check_gpu.py
 COPY smartink-live/sceneImporter.py smartink-live/body_full.blend smartink-live/body_full_female.blend /app/smartink-live/

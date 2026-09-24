@@ -1,6 +1,10 @@
 **
 !server/
 !server/app.py
+!server/measurement_fit.py
+!public/
+!public/measurements/
+!public/measurements/*-v1.bin
 !server/requirements.txt
 !server/runpod/
 !server/runpod/handler.py

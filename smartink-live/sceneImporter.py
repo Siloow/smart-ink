@@ -21,6 +21,9 @@ from typing import Any, Dict, List, Optional, Tuple
 import bmesh
 import bpy
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from server.measurement_fit import validate_fit, load_asset as load_measurement_asset, deform_fit
+
 # ---------------------------------------------------------------------------
 # Registry (mirrors src/render/registry.ts)
 # ---------------------------------------------------------------------------
@@ -3907,6 +3910,48 @@ def setup_output(output: Dict[str, Any], contract_dir: str) -> str:
     return output_path
 
 
+def apply_measurement_fit(body, body_mesh_id, fit):
+    """Transfer browser displacements to the original multires cage, keeping UVs.
+
+    The glTF preview splits UV seams and quantizes positions; the native cage
+    has one vertex at each seam. Match in the undeformed anatomical frame and
+    retain that tiny native/preview offset. Refuse a different mesh version.
+    """
+    from mathutils.kdtree import KDTree
+    validate_fit(fit, body_mesh_id)
+    asset = load_measurement_asset(body_mesh_id)
+    base = asset['positions']
+    fitted = deform_fit(asset, fit)
+    tree = KDTree(len(base) // 3)
+    for i in range(0, len(base), 3):
+        tree.insert(base[i:i + 3], i // 3)
+    tree.balance()
+    mesh = body.data
+    up, front = _body_axes(mesh, body)
+    side = up.cross(front)
+    original = [(v.co.dot(side), v.co.dot(up), v.co.dot(front)) for v in mesh.vertices]
+    result = []
+    max_distance = 0
+    for point in original:
+        _, index, distance = tree.find(point)
+        max_distance = max(max_distance, distance)
+        if distance > .00015:
+            raise ValueError('Measurement fit does not match this Blender body version')
+        result.append(Vector(tuple(point[k] + fitted[index*3 + k] - base[index*3 + k] for k in range(3))))
+    # Reject malformed recipes before modifying the cage or its multires data.
+    mesh.calc_loop_triangles()
+    for triangle in mesh.loop_triangles:
+        a, b, c = triangle.vertices
+        before = (Vector(original[b]) - Vector(original[a])).cross(Vector(original[c]) - Vector(original[a]))
+        after = (result[b] - result[a]).cross(result[c] - result[a])
+        if before.length > 1e-10 and (before.dot(after) <= 0 or after.length / before.length < .15):
+            raise ValueError('Measurement fit pinches or inverts the Blender body')
+    for vertex, (x, y, z) in zip(mesh.vertices, result):
+        vertex.co = side*x + up*y + front*z
+    mesh.update()
+    print(f'Measurement fit v1: {len(result)} native vertices, max correspondence {max_distance*1000:.4f} mm')
+
+
 def build_scene(contract_path: str) -> str:
     """Load contract.json + sibling ink.png and build the Blender scene. Returns output PNG path."""
     contract_path = os.path.abspath(contract_path)
@@ -3932,7 +3977,12 @@ def build_scene(contract_path: str) -> str:
     center_body_at_origin(body)
     ensure_box_projection_uvs(body)
     apply_skin(body, contract.get("skinToneId", "tone_03"), contract_dir)
-    apply_body_shape(body, contract.get("bodyShape"))
+    if 'bodyFit' in contract:
+        if any(contract.get('bodyShape', {}).values()):
+            raise ValueError('bodyFit replaces bodyShape; they cannot be combined')
+        apply_measurement_fit(body, contract['bodyMeshId'], contract['bodyFit'])
+    else:
+        apply_body_shape(body, contract.get("bodyShape"))
     shaped_coords = [(v.co.dot(side), v.co.dot(up), v.co.dot(front)) for v in body.data.vertices]
     center_body_at_origin(body)
     body["smartink_rest_height"] = float(body.dimensions.z)

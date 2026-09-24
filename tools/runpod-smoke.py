@@ -29,12 +29,15 @@ def test_job():
     return {"input": {"contract": contract, "ink_base64": base64.b64encode(png).decode()}}
 
 
-async def smoke(output):
+async def smoke(output, measured=False):
     os.environ.setdefault("RUNPOD_LOG_LEVEL", "INFO")
     from runpod.serverless.modules.rp_job import run_job_generator
     from server.runpod.handler import handler
     from server.app import validate_png
     job = {"id": "smartink-smoke", **test_job()}
+    if measured:
+        recipes = json.loads((ROOT / 'tools/fixtures/body-fit-recipes.json').read_text())
+        job['input']['contract']['bodyFit'] = next(row['fit'] for row in recipes if row['sex'] == 'male' and row['label'] == 'fuller')
     final = False
     chunks = []
     async for result in run_job_generator(handler, job):
@@ -63,8 +66,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, default=Path("/tmp/smartink-smoke.png"))
     parser.add_argument("--write-input", type=Path)
+    parser.add_argument("--measured", action="store_true")
     args = parser.parse_args()
     if args.write_input:
         args.write_input.write_text(json.dumps(test_job()))
     else:
-        asyncio.run(smoke(args.output))
+        asyncio.run(smoke(args.output, args.measured))
