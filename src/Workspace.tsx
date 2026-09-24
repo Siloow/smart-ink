@@ -434,7 +434,6 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
   type Shot = { contract: RenderContract; inkBlob: Blob }
 
   const buildShot = useCallback(async (options?: { snapshot?: SnapshotQuality; signal?: AbortSignal }): Promise<Shot> => {
-    if (bodyFit) throw new Error('This measured body is ready for viewport image export. Blender snapshots do not support measurement fits yet. Remove the measurement fit to render the original figure.')
     options?.signal?.throwIfAborted()
     if (options?.snapshot && (modelLoading || !uvPlacementRef.current?.getRegionFraming())) {
       throw new Error('Wait for the figure to finish loading before taking a snapshot.')
@@ -449,7 +448,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
     }
     const dims = options?.snapshot ? snapshotOutput(snap.aspect, options.snapshot) : exportDimensions(exportPreset, qualityTier)
     const contract = buildRenderContract(
-      { bodyMeshId, skinToneId, poseId, lookId, qualityTier: options?.snapshot ? 'final' : qualityTier, finalSamples: options?.snapshot ? snapshotOutput(snap.aspect, options.snapshot).samples : finalSamples, bodyShape, bodyPose, bodyAppearance, studio: studioForExport(studio, BACKGROUNDS[background].stops[0], BACKGROUNDS[background].stops), bodyRegion: isolateRegion },
+      { bodyMeshId, skinToneId, poseId, lookId, qualityTier: options?.snapshot ? 'final' : qualityTier, finalSamples: options?.snapshot ? snapshotOutput(snap.aspect, options.snapshot).samples : finalSamples, bodyShape, bodyFit, bodyPose, bodyAppearance, studio: studioForExport(studio, BACKGROUNDS[background].stops[0], BACKGROUNDS[background].stops), bodyRegion: isolateRegion },
       { position: snap.position, target: snap.target, fov: snap.fov, aspect: options?.snapshot ? snap.aspect : dims.width / dims.height },
       'ink.png', dims,
       { presetName: lightingPreset, intensityScale: LIGHTING_PRESETS[lightingPreset].threeIntensityScale, lights: structuredClone(lights) },

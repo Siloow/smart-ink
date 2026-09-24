@@ -252,4 +252,22 @@ for (const background of ['gray', 'bluepurple', 'peach']) {
 }
 console.log('Viewport gradient choices survive the real snapshot builder.');
 
-{ const f = fixture({ bodyFit: { version: 1 } }); await assert.rejects(f.build()({ snapshot: 'quick' }), /Blender snapshots do not support measurement fits/); assert.equal(f.calls.baked.length, 0); f.dispose(); }
+{ const f = fixture({ bodyFit: { version: 1 } }); await assert.rejects(f.build()({ snapshot: 'quick' }), /measurement fit is invalid/); assert.equal(f.calls.baked.length, 0); f.dispose(); }
+
+// A measured snapshot replaces old sliders and freezes its recipe before async baking.
+{
+  const recipes = JSON.parse(await fs.readFile(new URL('./fixtures/body-fit-recipes.json', import.meta.url), 'utf8'));
+  const bodyFit = structuredClone(recipes[1].fit);
+  const expected = structuredClone(bodyFit);
+  const baking = deferred();
+  const f = fixture({ bodyFit, bakeInkLayer: () => baking.promise });
+  const pending = f.build()({ snapshot: 'quick' });
+  bodyFit.measurements.waist += 5; bodyFit.parameters[0] += .01;
+  baking.resolve(f.ink);
+  const shot = await pending;
+  assert.deepEqual(shot.contract.bodyFit, expected);
+  assert.equal(shot.contract.bodyShape, undefined);
+  assert.equal(shot.contract.bodyPose.leftElbow, 35);
+  assert.equal(shot.contract.bodyRegion, 'armRight');
+  f.dispose();
+}

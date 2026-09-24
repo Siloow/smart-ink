@@ -1,5 +1,6 @@
 import type { BodyAppearance } from './bodyAppearance';
 import type { StudioSettings } from './studioSettings';
+import type { BodyFit } from '../measurements/fitter';
 export const RENDER_SCHEMA_VERSION = 1;
 
 export type QualityTier = 'preview' | 'final';
@@ -36,6 +37,8 @@ export interface RenderContract {
    * Applied identically by src/render/bodyShape.ts and sceneImporter.py.
    */
   bodyShape?: Record<string, number>;
+  /** Versioned measurement recipe; replaces shape sliders before posing. */
+  bodyFit?: BodyFit;
   /**
    * Region to cut out ('head', 'torso', 'armLeft', …). Omitted for the whole
    * figure. The signed region field hides all other skin in both renderers.

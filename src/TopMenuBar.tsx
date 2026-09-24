@@ -308,7 +308,7 @@ export default function TopMenuBar({
         <section className="ep-section" aria-label="Body measurements">
           <p className="ep-section-label">Your proportions</p>
           <button type="button" className="ep-btn ep-btn--primary ep-btn--block" onClick={onMeasureBody} disabled={measuringLoading}>{measuringLoading ? 'Loading guide…' : hasBodyFit ? 'Edit measurements' : 'Measure body'}</button>
-          <p className="ep-hint">{hasBodyFit ? 'Fitted to your measurements. Viewport images include the fit; Blender snapshots are not supported yet.' : 'Follow the guide to fit this figure to your measurements.'}</p>
+          <p className="ep-hint">{hasBodyFit ? 'Fitted to your measurements. Your proportions carry through to snapshots and exports.' : 'Follow the guide to fit this figure to your measurements.'}</p>
           {hasBodyFit && <button type="button" className="ep-btn ep-btn--ghost" onClick={onClearBodyFit}>Remove measurement fit</button>}
         </section>
         <section className="ep-section">

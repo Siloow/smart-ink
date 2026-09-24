@@ -8,13 +8,21 @@ The fit preserves triangle order and UVs. It is applied before existing posing, 
 
 ## Current output scope
 
-Viewport previews and viewport image export use the measured body. The deployed Blender worker does not support this new deformation recipe. The inspector explains this and the shared Blender shot builder refuses measured-body jobs before baking/uploading, avoiding a render with silently different proportions. Existing unmeasured-body rendering is unchanged. Porting the deformation recipe into the Blender worker and deploying that worker is a separate step.
+Viewport previews, image exports, Blender snapshots and render exports all use the saved measurement recipe. The shot builder copies that recipe before asynchronous tattoo baking and omits the previous shape sliders. Blender replays the same versioned deformation basis before the existing pose, region cut, clothing and skin pipeline.
+
+The browser mesh splits UV seams and has quantized positions. Blender retains its original multires cage, maps each undeformed vertex to the browser basis within 0.15 mm, and transfers its displacement. This preserves the native UVs, topology and sculpt detail. A different mesh version or an inverted/collapsed fit fails explicitly. Legacy shots without a fit keep their existing behavior.
+
+The worker bundles the same `public/measurements/*-v1.bin` assets. Deploy worker support before enabling the frontend; an older worker does not understand the fit field. Renderer rollout keeps the existing endpoint, GPU pool, scale-to-zero and max-one-worker settings.
 
 ## Verification
 
 - `npm run test:measurements`: eight male/female baseline/slimmer/fuller/taller cases compared to independently generated SciPy reference geometry; maximum sampled geometry difference below 0.1 mm, tested circumference error below 0.4 mm. Height and inseam landmarks, invalid inputs, profile normalization and save/reload reconstruction checked.
 - `npm run test:demo`, `npm run typecheck`, `npm run lint`, `npm run build` passed. Build output is below the existing 25 MB limit.
 - Browser: all 15 steps for male and female; blank validation; review editing; actual fitting; reopen values; cancellation; scene navigation/save; undo/redo; temporary neutral pose and restoration; desktop and 390 × 844 layout with expanded tips. No browser console errors after the asset loading correction.
-- Real mobile software keyboard and GPU-renderer integration were not tested.
+- Real mobile software keyboard was not tested.
+- `node tools/measurement-render.test.mjs`: all 12,010 template vertices agree between browser and Python to 1e-12 metres across eight male/female fits.
+- `python tools/measurement-server.test.py`: valid recipes, invalid versions/values, model mismatch, incompatible shape sliders and legacy requests.
+- Native Blender: eight fits retain UVs/topology/multires; all cage vertices remain within 0.09 mm of the browser surface; posed textured render checked visually. Run `/Applications/Blender.app/Contents/MacOS/Blender -b --python-exit-code 1 --python tools/measurement-blender.test.py -- --render /tmp/measured-body/fitted.png` (or `blender` on Linux).
+- Container CI renders both a legacy job and a measured job through the real worker SDK before publishing its image.
 
 Assets were generated from the original-mesh prototype at commit `19abc9e`, using its `FullBody` descriptors and shipped meshes. To regenerate, run `tools/export-measurement-assets.py /path/to/experiments/original-mesh` in that prototype's numpy/scipy/trimesh environment. The numerical fixture in `tools/fixtures/measurement-reference.json` is the independent SciPy solver's sampled output, not browser-solver output.

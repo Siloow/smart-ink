@@ -25,7 +25,7 @@
     "test:snapshot": "node tools/snapshot-session.test.mjs && node tools/snapshot-overlay.test.mjs && node tools/snapshot-workspace.test.mjs && node tools/snapshot-camera-controls.test.mjs && node tools/tattoo-camera.test.mjs && node tools/tattoo-source.test.mjs",
     "test:realism": "PYTHONDONTWRITEBYTECODE=1 server/.venv/bin/python tools/render-realism.test.py",
     "test:inspector": "node tools/adjustment-control.test.mjs && node tools/inspector-tabs.test.mjs && node tools/viewport-controls.test.mjs && node tools/editor-history.test.mjs && node tools/editor-history-bindings.test.mjs && node tools/editor-undo-workspace.test.mjs",
-    "test:measurements": "node tools/measurements.test.mjs"
+    "test:measurements": "node tools/measurements.test.mjs && node tools/measurement-render.test.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.3.0",

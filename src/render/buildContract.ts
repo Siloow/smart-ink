@@ -5,6 +5,8 @@ import { BODY_POSE_BOUNDS, normalizePose, poseBoundsForKey, poseFromPreset, type
 import { REGION_INDEX, type BodyRegionId } from './bodyRegions';
 import { appearanceValidationErrors, normalizeAppearance, type BodyAppearance } from './bodyAppearance';
 import { normalizeStudio, studioValidationErrors, type StudioSettings } from './studioSettings';
+import type { BodyFit } from '../measurements/fitter';
+import { normalizeBodyFit } from '../measurements/profile';
 
 export interface BuilderState {
   bodyMeshId: string;
@@ -18,6 +20,7 @@ export interface BuilderState {
   /** Cycles samples for the final tier; ignored for previews. */
   finalSamples?: number;
   bodyShape?: BodyShape;
+  bodyFit?: BodyFit | null;
   bodyRegion?: BodyRegionId | null;
 }
 export interface ShotState {
@@ -41,7 +44,9 @@ export function buildRenderContract(
   dims: { width: number; height: number },
   lighting?: { presetName: string; intensityScale?: number; lights: ContractLight[] }
 ): RenderContract {
-  const shape = builder.bodyShape ? effectiveShape(builder.bodyShape) : null;
+  const fit = builder.bodyFit ? normalizeBodyFit(builder.bodyFit, builder.bodyMeshId) : null;
+  if (builder.bodyFit && !fit) throw new Error('The measurement fit is invalid. Please measure this body again before rendering.');
+  const shape = !fit && builder.bodyShape ? effectiveShape(builder.bodyShape) : null;
   return {
     schemaVersion: RENDER_SCHEMA_VERSION,
     showEyes: true,
@@ -54,6 +59,7 @@ export function buildRenderContract(
     ...(builder.studio ? { studio: normalizeStudio(builder.studio) } : {}),
     lookId: builder.lookId,
     ...(shape && !isDefaultShape(shape) ? { bodyShape: { ...shape } } : {}),
+    ...(fit ? { bodyFit: structuredClone(fit) } : {}),
     ...(builder.bodyRegion ? { bodyRegion: builder.bodyRegion } : {}),
     inkTextureUrl,
     camera: { ...shot },
@@ -97,6 +103,10 @@ export function validateContract(c: RenderContract): string[] {
     }
   }
   if (!c.inkTextureUrl) errs.push('missing inkTextureUrl');
+  if (c.bodyFit !== undefined) {
+    if (!normalizeBodyFit(c.bodyFit, c.bodyMeshId)) errs.push('invalid bodyFit for this model');
+    if (c.bodyShape && Object.values(c.bodyShape).some(value => value !== 0)) errs.push('bodyFit replaces bodyShape');
+  }
   if (c.bodyAppearance !== undefined) errs.push(...appearanceValidationErrors(c.bodyAppearance));
   if (c.studio !== undefined) errs.push(...studioValidationErrors(c.studio));
   if (c.bodyRegion && !(c.bodyRegion in REGION_INDEX)) {
