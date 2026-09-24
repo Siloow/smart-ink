@@ -27,4 +27,21 @@ print(json.dumps(deform_fit(load_asset(f['bodyMeshId']),f)))`], {input:JSON.stri
   console.log(`${row.sex}/${row.label}: all ${actual.length/3} renderer vertices match browser (< 1e-12 m)`);
 }
 if (process.argv.includes('--write-fixtures')) await fs.writeFile('tools/fixtures/body-fit-recipes.json',JSON.stringify(recipes,null,2)+'\n');
-else assert.deepEqual(JSON.parse(await fs.readFile('tools/fixtures/body-fit-recipes.json','utf8')),recipes,'Regenerate fit recipes when the browser solver changes');
+else {
+  // V8/libm may differ by a final bit across CPU architectures. Keep a strict
+  // absolute tolerance, far below any meaningful fit or measurement change.
+  const compare = (actual, expected, path = 'recipes') => {
+    if (typeof actual === 'number' && typeof expected === 'number') {
+      assert.ok(Number.isFinite(actual) && Number.isFinite(expected) && Math.abs(actual - expected) <= 1e-12,
+        `${path}: regenerate fit recipes when the browser solver changes (${actual} vs ${expected})`);
+    } else if (actual && expected && typeof actual === 'object' && typeof expected === 'object') {
+      assert.equal(Array.isArray(actual), Array.isArray(expected), path);
+      assert.deepEqual(Object.keys(actual), Object.keys(expected), path);
+      for (const key of Object.keys(actual)) compare(actual[key], expected[key], `${path}.${key}`);
+    } else assert.deepEqual(actual, expected, path);
+  };
+  compare({ parameters: [.12343967471175452] }, { parameters: [.1234396747117545] });
+  assert.throws(() => compare({ parameters: [.1] }, { parameters: [.10000001] }));
+  assert.throws(() => compare({ label: 'male' }, { label: 'female' }));
+  compare(JSON.parse(await fs.readFile('tools/fixtures/body-fit-recipes.json','utf8')), recipes);
+}
