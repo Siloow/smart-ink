@@ -34,6 +34,16 @@ jobs:
       - name: Editor and rendering regression tests
         run: npm run test:demo
 
+      - name: RunPod frontend regression tests
+        run: node tools/runpod-render-service.test.mjs
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Render gateway access and job tests
+        run: deno test tools/render-gateway.test.ts
+
       - name: Build
         run: npm run build
 

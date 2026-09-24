@@ -1,3 +1,4 @@
+import { usesRunpodGateway } from './services/cloudRenderService'
 import { useState, useEffect, useRef, useCallback, useMemo, useSyncExternalStore, Suspense } from 'react'
 import type { CSSProperties } from 'react'
 import { Canvas, useThree } from '@react-three/fiber'
@@ -293,6 +294,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
   const [snapshotSession] = useState(() => createSnapshotSession({
     render: renderContract,
     retain: async (shot, imageUrl) => {
+      if (usesRunpodGateway()) return // Gateway already persisted this render.
       const image = await fetch(imageUrl).then((response) => response.blob())
       await addRenderHistory({ source: 'cycles', width: shot.contract.output.width,
         height: shot.contract.output.height, qualityTier: shot.contract.output.qualityTier,
@@ -774,15 +776,16 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
       if (renderController.current === controller) renderController.current = null
       try {
         const renderBlob = await fetch(imageUrl).then((r) => r.blob())
-        await addRenderHistory({ source: 'cycles', width: shot.contract.output.width,
+        if (!usesRunpodGateway()) await addRenderHistory({ source: 'cycles', width: shot.contract.output.width,
           height: shot.contract.output.height, qualityTier: shot.contract.output.qualityTier,
           lookId: shot.contract.lookId, sceneName: currentScene?.name }, renderBlob)
       } catch {
         setHistoryWarning('Your render is ready to download, but could not be added to history.')
       }
     } catch (error) {
-      setCloudRenderStatus(controller.signal.aborted ? 'cancelled' : 'error')
-      setCloudRenderMessage(controller.signal.aborted ? (renderServer?.cancellationSupported ? 'Render cancelled. You can start again.' : 'Stopped waiting. This server may finish the render in the background.')
+      const cancelled = controller.signal.aborted && !(error instanceof Error && error.name === 'CancellationUnconfirmedError')
+      setCloudRenderStatus(cancelled ? 'cancelled' : 'error')
+      setCloudRenderMessage(cancelled ? (renderServer?.cancellationSupported ? 'Render cancelled. You can start again.' : 'Stopped waiting. This server may finish the render in the background.')
         : error instanceof Error ? error.message : 'Rendering failed. Please try again.')
     } finally {
       if (renderController.current === controller) renderController.current = null

@@ -9,11 +9,16 @@ const RENDER_URL =
   import.meta.env.VITE_RENDER_URL ??
   (import.meta.env.DEV ? '' : CLOUD_RENDER_URL);
 
+export function usesRunpodGateway(): boolean {
+  return import.meta.env?.VITE_RENDER_BACKEND === 'runpod';
+}
+
 export function getRenderUrl(): string {
   return RENDER_URL;
 }
 
 export function getRenderTargetLabel(): 'local' | 'cloud' {
+  if (usesRunpodGateway()) return 'cloud';
   if (import.meta.env.DEV && !import.meta.env.VITE_RENDER_URL) return 'local';
   const url = RENDER_URL.toLowerCase();
   if (url.includes('localhost') || url.includes('127.0.0.1')) return 'local';
@@ -61,6 +66,7 @@ function requestLifetime(signal: AbortSignal | undefined, timeoutMs: number) {
   return {
     signal: controller.signal,
     error(error: unknown): Error {
+      if (error instanceof Error && error.name === 'CancellationUnconfirmedError') return error;
       if (controller.signal.aborted) {
         return new DOMException(
           timedOut ? 'The render server took too long. Please try again.' : 'Render cancelled',
@@ -173,10 +179,17 @@ export async function renderContract(
   inkLayer: Blob,
   opts?: CloudRenderOptions
 ): Promise<string> {
-  const lifetime = requestLifetime(opts?.signal, opts?.timeoutMs ?? 630_000);
+  const lifetime = requestLifetime(opts?.signal, opts?.timeoutMs ?? (usesRunpodGateway() ? 1_800_000 : 630_000));
   try {
     lifetime.signal.throwIfAborted();
     const form = shotForm(contract, inkLayer);
+    if (usesRunpodGateway()) {
+      const { renderOnRunpod } = await import('./runpodRenderService');
+      const blob = await renderOnRunpod(contract, inkLayer, opts ?? {}, lifetime.signal, readRenderImage);
+      lifetime.signal.throwIfAborted();
+      opts?.onStatusChange?.('done', 'Render saved to history.');
+      return URL.createObjectURL(blob);
+    }
     opts?.onStatusChange?.('uploading', 'Sending shot to render server...');
     opts?.onStatusChange?.('rendering', 'Rendering with Cycles...');
     const res = await fetch(`${RENDER_URL}/render-v2`, { method: 'POST', body: form, signal: lifetime.signal, ...(opts?.onPreview ? { headers: { Accept: 'application/x-ndjson' } } : {}) });
@@ -213,6 +226,10 @@ export async function syncToLiveWatcher(
 }
 
 export async function getRenderServerStatus(): Promise<RenderServerStatus> {
+  if (usesRunpodGateway()) {
+    try { return await (await import('./runpodRenderService')).gatewayHealth(); }
+    catch (error) { return { online: false, ready: false, message: error instanceof Error ? error.message : 'Render gateway unavailable.' }; }
+  }
   const lifetime = requestLifetime(undefined, 10_000);
   try {
     const res = await fetch(`${RENDER_URL}/health`, { signal: lifetime.signal });

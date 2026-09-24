@@ -88,7 +88,7 @@ for (const visible of [false, true]) {
 }
 // A history outage must not turn a completed render into an error or block retry.
 const renderSnippet = source.slice(source.indexOf('  const handleCloudRender ='), source.indexOf('  const openSnapshot ='));
-const renderNames = ['renderController', 'setCloudRenderStatus', 'setCloudRenderMessage', 'setHistoryWarning', 'setRenderElapsed', 'setCloudRenderImage', 'buildShot', 'renderContract', 'addRenderHistory', 'fetch', 'currentScene', 'renderServer'];
+const renderNames = ['renderController', 'setCloudRenderStatus', 'setCloudRenderMessage', 'setHistoryWarning', 'setRenderElapsed', 'setCloudRenderImage', 'buildShot', 'renderContract', 'addRenderHistory', 'fetch', 'currentScene', 'renderServer', 'usesRunpodGateway'];
 const renderCode = await transform(`(function(${renderNames.join(',')}) { ${renderSnippet}; return handleCloudRender; })`, { loader: 'ts' });
 const createRender = (0, eval)(renderCode.code);
 let status, image, warning, releaseHistory;
@@ -97,7 +97,7 @@ const handler = createRender(controller, (s) => { status = s; }, () => {}, (s) =
   async () => ({ contract: { output: { width: 512, height: 512, qualityTier: 'preview' }, lookId: 'studio_softbox' }, inkBlob: new Blob() }),
   async () => 'blob:completed-image',
   () => new Promise((_, reject) => { releaseHistory = () => reject(new Error('history unavailable')); }),
-  async () => ({ blob: async () => new Blob(['render']) }), { name: 'Test scene' }, { cancellationSupported: true });
+  async () => ({ blob: async () => new Blob(['render']) }), { name: 'Test scene' }, { cancellationSupported: true }, () => false);
 const completion = handler();
 await new Promise((resolve) => setImmediate(resolve));
 assert.equal(status, 'done');
