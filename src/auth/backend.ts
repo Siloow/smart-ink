@@ -20,6 +20,8 @@ import { isSupabaseConfigured } from './supabaseClient';
 export type AuthMode = 'supabase' | 'demo' | 'unconfigured';
 
 export function authMode(): AuthMode {
+  // An explicit development override never enables demo auth in production.
+  if (import.meta.env.DEV && import.meta.env.VITE_AUTH_MODE === 'demo') return 'demo';
   if (isSupabaseConfigured()) return 'supabase';
   return import.meta.env.DEV ? 'demo' : 'unconfigured';
 }

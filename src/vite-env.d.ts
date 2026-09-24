@@ -1,6 +1,8 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
+  /** Explicit local demo gate; ignored in production builds. */
+  readonly VITE_AUTH_MODE?: string;
   /** Render server. Empty in dev means same-origin (Vite proxies to :8000). */
   readonly VITE_RENDER_URL?: string;
   /** Hosted beta gate. Both set → Supabase backend; neither → demo (dev only). */

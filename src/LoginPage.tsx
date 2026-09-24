@@ -44,7 +44,7 @@ export default function LoginPage({ onAuthenticated, onBackToLanding, onOpenInvi
 
   /** Dev shortcut (demo backend only): `admin` in the email field signs straight in. */
   const tryDevAdmin = async (): Promise<boolean> => {
-    if (!isDevAdminHandle(email)) return false;
+    if (mode !== 'demo' || !isDevAdminHandle(email)) return false;
     onAuthenticated(await signInAsDevAdmin());
     return true;
   };
@@ -153,8 +153,17 @@ export default function LoginPage({ onAuthenticated, onBackToLanding, onOpenInvi
 
           {mode === 'demo' && (
             <div className="beta-banner" style={{ marginTop: 12 }}>
-              Local demo backend — type <strong>{DEV_ADMIN_HANDLE}</strong> as the email to sign in
-              as super admin.
+              <button
+                type="button"
+                className="btn-continue"
+                disabled={busy !== null}
+                onClick={() => void run('verify', async () => {
+                  onAuthenticated(await signInAsDevAdmin());
+                }, 'Could not sign in as local admin.')}
+              >
+                Sign in as local admin
+              </button>
+              Or type <strong>{DEV_ADMIN_HANDLE}</strong> in the email field. Local data stays in this browser.
             </div>
           )}
           {codeSent &&
