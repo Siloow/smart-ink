@@ -6,6 +6,7 @@ import {
   requestEmailCode,
   signInAsDevAdmin,
   signInWithGoogle,
+  signInWithPassword,
   verifyEmailCode,
 } from './auth/betaAuthService';
 import type { BetaSession } from './auth/types';
@@ -18,13 +19,14 @@ export interface LoginPageProps {
   notice?: string | null;
 }
 
-type Busy = 'google' | 'code' | 'verify' | null;
+type Busy = 'google' | 'code' | 'verify' | 'password' | null;
 
 export default function LoginPage({ onAuthenticated, onBackToLanding, onOpenInvite, notice }: LoginPageProps) {
   const mode = authMode();
   const unconfigured = mode === 'unconfigured';
   const [email, setEmail] = useState('');
   const [otp, setOtp] = useState('');
+  const [password, setPassword] = useState('');
   const [codeSent, setCodeSent] = useState(false);
   const [demoCode, setDemoCode] = useState<string | null>(null);
   const [busy, setBusy] = useState<Busy>(null);
@@ -193,7 +195,27 @@ export default function LoginPage({ onAuthenticated, onBackToLanding, onOpenInvi
               {busy === 'verify' ? 'Checking…' : 'Verify'}
             </button>
           </form>
-          {error && <p className="beta-error">{error}</p>}
+          {mode === 'supabase' && (
+            <details style={{ marginTop: 20 }}>
+              <summary className="beta-inline-link" style={{ cursor: 'pointer' }}>Sign in with a password</summary>
+              <form style={{ marginTop: 12 }} onSubmit={(event) => {
+                event.preventDefault();
+                void run('password', async () => {
+                  try { onAuthenticated(await signInWithPassword(email, password)); }
+                  finally { setPassword(''); }
+                }, 'Could not sign in.');
+              }}>
+                <label className="beta-label" htmlFor="login-password">Password</label>
+                <input id="login-password" className="login-input" type="password"
+                  autoComplete="current-password" value={password} required
+                  onChange={(event) => setPassword(event.target.value)} disabled={busy !== null} />
+                <button type="submit" className="btn-continue" disabled={busy !== null || !email.trim() || !password}>
+                  {busy === 'password' ? 'Signing in…' : 'Sign in'}
+                </button>
+              </form>
+            </details>
+          )}
+          {error && <p className="beta-error" role="alert">{error}</p>}
 
           <div className="login-footer">
             Have an invite code?{' '}

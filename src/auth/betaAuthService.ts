@@ -10,7 +10,7 @@ import {
   signInAsDevAdmin as demoSignInAsDevAdmin,
   unlockDemoAdmin,
 } from './localDemoBackend';
-import { supabaseBackend } from './supabaseBackend';
+import { supabaseBackend, signInWithPassword as hostedPasswordSignIn } from './supabaseBackend';
 import type {
   BetaSession,
   Invite,
@@ -76,6 +76,11 @@ export function requestEmailCode(email: string): Promise<{ demoCode?: string }> 
 
 export function verifyEmailCode(email: string, code: string): Promise<BetaSession> {
   return requireSignInBackend().verifyEmailCode(email, code);
+}
+
+export async function signInWithPassword(email: string, password: string): Promise<BetaSession> {
+  if (authMode() !== 'supabase') throw new Error('Password sign-in requires a configured hosted account.');
+  return hostedPasswordSignIn(email, password);
 }
 
 /** Resolves to null while the browser is being redirected to Google. */
