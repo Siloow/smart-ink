@@ -130,7 +130,7 @@ export function regionSnapshotFraming(region: RegionFraming, direction: [number,
 
 /** Fixed-target composition: angles stay in the skin's front hemisphere, while
  * zoom changes distance. Occluding body triangles impose a final safety stop. */
-export function frameTattoo(framing: TattooFraming, value: Partial<TattooCameraAdjustment> = {}, aspect = 1): CameraView {
+export function frameTattoo(framing: TattooFraming, value: Partial<TattooCameraAdjustment> = {}, aspect = 1, verticalFov = 38): CameraView {
   const adjustment = normalizeTattooCamera(value), target = new THREE.Vector3(...framing.center);
   const normal = new THREE.Vector3(...framing.normal).normalize(), up = new THREE.Vector3(...framing.up).normalize();
   const right = new THREE.Vector3().crossVectors(up, normal).normalize();
@@ -142,7 +142,7 @@ export function frameTattoo(framing: TattooFraming, value: Partial<TattooCameraA
   direction.normalize();
   const cameraRight = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), direction).normalize();
   const cameraUp = new THREE.Vector3().crossVectors(direction, cameraRight).normalize();
-  const fov = 38, tanV = Math.tan(THREE.MathUtils.degToRad(fov / 2));
+  const fov = Number.isFinite(verticalFov) ? THREE.MathUtils.clamp(verticalFov, 15, 60) : 38, tanV = Math.tan(THREE.MathUtils.degToRad(fov / 2));
   const tanH = tanV * (Number.isFinite(aspect) && aspect > 0 ? THREE.MathUtils.clamp(aspect, .1, 10) : 1);
   const offset = new THREE.Vector3();
   let fittedDistance = framing.minDistance, clearance = framing.minDistance;

@@ -30,9 +30,9 @@ const { outputFiles } = await build({
   bundle: true, platform: 'node', format: 'esm', write: false,
 });
 const api = await import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString('base64')}`);
-const dependencies = ['bodyFit', 'useCallback', 'uvPlacementRef', 'uploadedImage', 'decalVisible', 'orbitControlsRef', 'cameraState', 'canvasHostRef', 'modelLoading', 'bakeInkLayer', 'blankInkLayer', 'snapshotOutput', 'exportDimensions', 'buildRenderContract', 'exportPreset', 'bodyMeshId', 'skinToneId', 'poseId', 'lookId', 'qualityTier', 'finalSamples', 'bodyShape', 'bodyPose', 'bodyAppearance', 'studio', 'studioForExport', 'background', 'BACKGROUNDS', 'isolateRegion', 'lightingPreset', 'lights', 'LIGHTING_PRESETS', 'resolveTattooSource'];
+const dependencies = ['snapshotLook', 'cinematicPreset', 'bodyFit', 'useCallback', 'uvPlacementRef', 'uploadedImage', 'decalVisible', 'orbitControlsRef', 'cameraState', 'canvasHostRef', 'modelLoading', 'bakeInkLayer', 'blankInkLayer', 'snapshotOutput', 'exportDimensions', 'buildRenderContract', 'exportPreset', 'bodyMeshId', 'skinToneId', 'poseId', 'lookId', 'qualityTier', 'finalSamples', 'bodyShape', 'bodyPose', 'bodyAppearance', 'studio', 'studioForExport', 'background', 'BACKGROUNDS', 'isolateRegion', 'lightingPreset', 'lights', 'LIGHTING_PRESETS', 'resolveTattooSource'];
 const makeShot = await callback('buildShot', dependencies);
-const makeOpen = await callback('openSnapshot', ['renderBusy', 'modelLoading', 'canvasHostSized', 'setShapeMenu', 'setHoverRegion', 'setPanelRegions', 'setAccountMenuOpen', 'snapshotSession', 'currentShotBuilder', 'snapshotReturnCamera', 'orbitControlsRef', 'cameraState', 'setTattooFraming', 'setSnapshotHasTattoo', 'setSnapshotFramingHint', 'regionSnapshotFraming', 'setSnapshotCamera', 'uvPlacementRef', 'DEFAULT_TATTOO_CAMERA_ADJUSTMENT', 'currentScene']);
+const makeOpen = await callback('openSnapshot', ['setSnapshotLook', 'renderBusy', 'modelLoading', 'canvasHostSized', 'setShapeMenu', 'setHoverRegion', 'setPanelRegions', 'setAccountMenuOpen', 'snapshotSession', 'currentShotBuilder', 'snapshotReturnCamera', 'orbitControlsRef', 'cameraState', 'setTattooFraming', 'setSnapshotHasTattoo', 'setSnapshotFramingHint', 'regionSnapshotFraming', 'setSnapshotCamera', 'uvPlacementRef', 'DEFAULT_TATTOO_CAMERA_ADJUSTMENT', 'currentScene']);
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 const deferred = () => {
   let resolve, reject;
@@ -48,7 +48,7 @@ function fixture(overrides = {}) {
   const calls = { freeze: 0, freezeFlags: [], snapshot: 0, baked: [], blank: 0 };
   const ink = new Blob(['snapshot ink'], { type: 'image/png' });
   const scope = {
-    useCallback: (fn) => fn, modelLoading: false, bodyFit: null,
+    useCallback: (fn) => fn, modelLoading: false, bodyFit: null, snapshotLook: null, cinematicPreset: () => undefined,
     uvPlacementRef: { current: { getPlacement: () => placement, getTattooFraming: () => ({ center: [.2, .8, .1], radius: .4 }), getRegionFraming: () => ({ center: [0, 0, 0], radius: 1 }) } },
     uploadedImage: 'data:image/png;base64,dGVzdA==', decalVisible: true,
     orbitControlsRef: { current: {
@@ -149,7 +149,7 @@ for (const reason of ['model-loading', 'body-unavailable', 'image-loading', 'pre
 function openerScope(f, session, overrides = {}) {
   const menuChanges = [];
   return {
-    renderBusy: false, modelLoading: false, canvasHostSized: true,
+    setSnapshotLook: () => {}, renderBusy: false, modelLoading: false, canvasHostSized: true,
     setShapeMenu: (value) => menuChanges.push(['shape', value]), setHoverRegion: (value) => menuChanges.push(['hover', value]),
     setPanelRegions: (value) => menuChanges.push(['regions', value]), setAccountMenuOpen: (value) => menuChanges.push(['account', value]),
     snapshotSession: session, currentShotBuilder: { current: f.build() }, snapshotReturnCamera: { current: null }, orbitControlsRef: f.scope.orbitControlsRef, cameraState: f.scope.cameraState, uvPlacementRef: f.scope.uvPlacementRef, setTattooFraming: () => {}, setSnapshotHasTattoo: () => {}, setSnapshotFramingHint: () => {}, regionSnapshotFraming: api.regionSnapshotFraming, setSnapshotCamera: () => {}, DEFAULT_TATTOO_CAMERA_ADJUSTMENT: api.DEFAULT_TATTOO_CAMERA_ADJUSTMENT, currentScene: { name: 'My current figure' }, menuChanges, ...overrides,
@@ -270,4 +270,15 @@ console.log('Viewport gradient choices survive the real snapshot builder.');
   assert.equal(shot.contract.bodyPose.leftElbow, 35);
   assert.equal(shot.contract.bodyRegion, 'armRight');
   f.dispose();
+}
+
+// A chosen look survives capture and quality changes without losing the fit.
+{
+ const f = fixture({snapshotLook:'detail',cinematicPreset:()=>({aperture:11})});
+ const shot=await f.build()({snapshot:'detailed'});
+ assert.equal(shot.contract.camera.aperture,11);
+ assert.equal(shot.contract.camera.depthOfField,true);
+ assert.equal(shot.contract.bodyHair,'vellus');
+ assert.equal(api.snapshotContract(shot.contract,'detailed').camera.aperture,11);
+ f.dispose();
 }

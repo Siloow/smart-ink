@@ -20,7 +20,7 @@ export function snapshotContract(source: RenderContract, quality: SnapshotQualit
   contract.renderStyle = 'cinematic';
   contract.output = snapshotOutput(contract.camera.aspect, quality);
   contract.camera.preserveFraming = true;
-  contract.camera.aperture = 8;
-  contract.camera.depthOfField = quality !== 'detailed';
+  contract.camera.aperture = source.camera.aperture ?? 8;
+  contract.camera.depthOfField = source.camera.depthOfField ?? quality !== 'detailed';
   return contract;
 }

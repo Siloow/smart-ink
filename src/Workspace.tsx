@@ -25,6 +25,8 @@ import { useEditorHistory } from './hooks/useEditorHistory'
 import { bindEditorHistory } from './services/editorHistoryBindings'
 import SnapshotOverlay from './SnapshotOverlay'
 import SnapshotCameraControls from './SnapshotCameraControls'
+import SnapshotPresets from './SnapshotPresets'
+import { cinematicPreset, cinematicLights, type CinematicPresetId } from './render/cinematicPresets'
 import LightingControls from './LightingControls'
 import { DEFAULT_TATTOO_CAMERA_ADJUSTMENT, frameTattoo, regionSnapshotFraming, type TattooFraming, type TattooCameraAdjustment } from './render/tattooCamera'
 import { resolveTattooSource } from './render/tattooSource'
@@ -321,6 +323,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
   const [snapshotHasTattoo, setSnapshotHasTattoo] = useState(false)
   const [snapshotFramingHint, setSnapshotFramingHint] = useState('')
   const [snapshotCamera, setSnapshotCamera] = useState<TattooCameraAdjustment>(() => ({ ...DEFAULT_TATTOO_CAMERA_ADJUSTMENT }))
+  const [snapshotLook, setSnapshotLook] = useState<CinematicPresetId | null>(null)
   const snapshotReturnCamera = useRef<{ position: [number, number, number]; target: [number, number, number]; fov: number } | null>(null)
   const closeSnapshot = useCallback(() => {
     const restore = snapshotReturnCamera.current
@@ -336,10 +339,10 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
   // stays on the posed tattoo, and window resizing refits the same footprint.
   useEffect(() => {
     if (!snapshot.open || snapshot.mode !== 'compose' || !tattooFraming) return
-    setCameraState(frameTattoo(tattooFraming, snapshotCamera, viewportAspect))
+    setCameraState(frameTattoo(tattooFraming, snapshotCamera, viewportAspect, cinematicPreset(snapshotLook)?.fov))
     setCameraRequestId((value) => value + 1)
     setCameraPreset('custom')
-  }, [snapshot.open, snapshot.mode, tattooFraming, snapshotCamera, viewportAspect])
+  }, [snapshot.open, snapshot.mode, tattooFraming, snapshotCamera, viewportAspect, snapshotLook])
   const snapshotBusy = snapshot.status === 'uploading' || snapshot.status === 'rendering'
   useEffect(() => {
     if (!snapshotBusy) { if (snapshot.mode === 'compose') setSnapshotElapsed(0); return }
@@ -453,6 +456,12 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
       'ink.png', dims,
       { presetName: lightingPreset, intensityScale: LIGHTING_PRESETS[lightingPreset].threeIntensityScale, lights: structuredClone(lights) },
     )
+    const cinematic = options?.snapshot ? cinematicPreset(snapshotLook) : undefined
+    if (cinematic) {
+      contract.camera.aperture = cinematic.aperture
+      contract.camera.depthOfField = true
+      contract.bodyHair = 'vellus'
+    }
     // Freeze scene metadata before the asynchronous image bake.
     const frozenContract = structuredClone(contract)
     const inkBlob = decalVisible && placement?.hasPlaced && placement.visible
@@ -462,7 +471,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
       : await blankInkLayer()
     options?.signal?.throwIfAborted()
     return { contract: frozenContract, inkBlob }
-  }, [bodyFit, uploadedImage, decalVisible, exportPreset, bodyMeshId, skinToneId, poseId, lookId, qualityTier, finalSamples, bodyShape, bodyPose, bodyAppearance, isolateRegion, cameraState, lightingPreset, lights, studio, background, modelLoading])
+  }, [snapshotLook, bodyFit, uploadedImage, decalVisible, exportPreset, bodyMeshId, skinToneId, poseId, lookId, qualityTier, finalSamples, bodyShape, bodyPose, bodyAppearance, isolateRegion, cameraState, lightingPreset, lights, studio, background, modelLoading])
 
   const handleLookChange = useCallback((id: string) => {
     setLookId(id)
@@ -844,9 +853,21 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
       ? 'The tattoo is covered or outside this Focus view. The camera is centered on the visible figure.'
       : 'Camera centered on the figure. Return to editing and click the skin to place the example tattoo, or render without ink.')
     setSnapshotCamera({ ...DEFAULT_TATTOO_CAMERA_ADJUSTMENT })
+    setSnapshotLook(null)
     snapshotSession.open(async (signal) => ({
       ...await currentShotBuilder.current({ snapshot: snapshotSession.getState().quality, signal }), sceneName: currentScene?.name,
     }))
+  }
+  const applySnapshotPreset = (id: CinematicPresetId) => {
+    const preset = cinematicPreset(id)
+    if (!preset || !tattooFraming) return
+    const camera = frameTattoo(tattooFraming, preset.adjustment, viewportAspect, preset.fov)
+    setSnapshotLook(id)
+    setSnapshotCamera({ ...preset.adjustment })
+    setLightingPreset('studio')
+    setLights(cinematicLights(preset, camera, LIGHTING_PRESETS.studio.threeIntensityScale))
+    setStudio(previous => ({ ...previous, mode: 'plain', color: preset.background, gradient: undefined, showGuides: false }))
+    setSelectedLight(1)
   }
   const aimSnapshotLights = () => {
     if (!snapshotHasTattoo || !tattooFraming) return
@@ -1118,6 +1139,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
             onComplete={async values => { const result = await fitBody(bodyMeshId, values); setBodyFit(result.fit); closeMeasurement() }} />}
           {snapshot.open && <SnapshotOverlay
             mode={snapshot.mode} onAdjust={snapshotSession.adjust}
+            presetControls={<SnapshotPresets selected={snapshotLook} onSelect={applySnapshotPreset} />}
             cameraControls={<SnapshotCameraControls adjustment={snapshotCamera} onChange={setSnapshotCamera}
               onReset={() => setSnapshotCamera({ ...DEFAULT_TATTOO_CAMERA_ADJUSTMENT })} hasTattoo={snapshotHasTattoo} />}
             lightingControls={<>

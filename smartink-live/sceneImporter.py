@@ -2966,7 +2966,7 @@ def _tune_skin_bsdf(mat: bpy.types.Material, bsdf, world_scale: float) -> None:
 
     _set(bsdf, "Metallic", 0.0)
     _set(bsdf, "IOR", 1.4)                    # skin, not glass
-    _set(bsdf, "Specular IOR Level", 0.5)     # 0.5 == "use the IOR above"
+    _set(bsdf, "Specular IOR Level", 0.35)     # restrained surface reflection
     _set(bsdf, "Diffuse Roughness", 0.35)
 
     # No coat. A clearcoat is a uniform lacquer layer, and a uniform highlight
@@ -2991,24 +2991,22 @@ def _tune_skin_bsdf(mat: bpy.types.Material, bsdf, world_scale: float) -> None:
 # ---------------------------------------------------------------------------
 # Micro-relief
 #
-# Under a lens, skin is not noise: it is a polygonal network of cells a
-# millimetre or two across, each ringed by a shallow groove, with pores where
-# the grooves meet and fine creases running through the lot. That network is
-# what a highlight actually breaks up on. Perlin noise, which is what the
-# skins.blend chain was made of, has no edges, so the highlight stays one
-# smooth sheet -- which is the wax read, whatever the roughness value.
+# Keep the procedural network subordinate to the sculpt. Coarse, deep Voronoi
+# edges read as cracked paint on dark ink in close-ups. Finer, shallower lines
+# and restrained roughness variation break highlights without stamping a
+# visible polygon grid across the tattoo.
 #
 # Everything here is built in object space (one unit ~ one metre of skin), so
 # the frequencies below are cycles per metre and read as feature sizes.
 # ---------------------------------------------------------------------------
 
-CELL_FREQ = 650.0          # ~1.5 mm cells
-CELL_FINE_FREQ = 1450.0    # secondary network inside the primary cells
-PORE_FREQ = 520.0          # ~2 mm pore spacing, thinned by a density mask
+CELL_FREQ = 1800.0         # subtle sub-millimetre surface lines
+CELL_FINE_FREQ = 3200.0    # secondary network inside the primary cells
+PORE_FREQ = 1500.0         # finer pores, thinned by a density mask
 CREASE_FREQ = 170.0        # ~6 mm creases, deepest over joints
-RELIEF_DEPTH_M = 0.00012   # shallow surface texture; anatomy stays in the sculpt bake
-SKIN_SSS_WEIGHT = 0.65     # retain surface definition alongside light transport
-SKIN_SSS_SCALE_M = 0.0015   # restrained red transport keeps tattoos and creases legible
+RELIEF_DEPTH_M = 0.00006   # shallow surface texture; anatomy stays in the sculpt bake
+SKIN_SSS_WEIGHT = 0.4     # retain surface definition alongside light transport
+SKIN_SSS_SCALE_M = 0.0008   # restrained red transport keeps tattoos and creases legible
 
 
 def _math(mat, op: str, a, b=None, clamp: bool = False, location=(0, 0)):
@@ -3099,15 +3097,15 @@ def _rebuild_micro_relief(mat: bpy.types.Material, bsdf, world_scale: float, con
     crease_term = _math(mat, "MULTIPLY", crease, weight, location=(-200, -1800))
 
     # Compose: a plateau at 1, with each feature cut down from it.
-    height = _math(mat, "SUBTRACT", 1.0, _math(mat, "MULTIPLY", _math(mat, "SUBTRACT", 1.0, plateau, location=(-560, -1000)), 0.22, location=(-380, -1000)), location=(-200, -1000))
-    height = _math(mat, "SUBTRACT", height, _math(mat, "MULTIPLY", _math(mat, "SUBTRACT", 1.0, fine_plateau, location=(-560, -1200)), 0.10, location=(-380, -1200)), location=(-40, -1000))
+    height = _math(mat, "SUBTRACT", 1.0, _math(mat, "MULTIPLY", _math(mat, "SUBTRACT", 1.0, plateau, location=(-560, -1000)), 0.025, location=(-380, -1000)), location=(-200, -1000))
+    height = _math(mat, "SUBTRACT", height, _math(mat, "MULTIPLY", _math(mat, "SUBTRACT", 1.0, fine_plateau, location=(-560, -1200)), 0.015, location=(-380, -1200)), location=(-40, -1000))
     height = _math(mat, "SUBTRACT", height, _math(mat, "MULTIPLY", dimple, 0.55, location=(-200, -1400)), location=(120, -1000))
     height = _math(mat, "SUBTRACT", height, _math(mat, "MULTIPLY", crease_term, 0.40, location=(-40, -1800)), location=(280, -1000))
     if old_height is not None:
         # The old noise chain stays in at low weight as sub-millimetre grain.
         height = _math(mat, "ADD", height, _math(mat, "MULTIPLY", old_height, 0.15, location=(120, -1300)), location=(440, -1000))
     links.new(height, height_in)
-    _set(bump, "Strength", 0.4)
+    _set(bump, "Strength", 0.3)
     _set(bump, "Distance", RELIEF_DEPTH_M * world_scale)
 
     # The grooves and pores are matte; the plateaus between them carry the
@@ -3117,7 +3115,7 @@ def _rebuild_micro_relief(mat: bpy.types.Material, bsdf, world_scale: float, con
     if rough_socket is not None and rough_socket.is_linked:
         source = rough_socket.links[0].from_socket
         links.remove(rough_socket.links[0])
-        groove = _math(mat, "MULTIPLY", _math(mat, "SUBTRACT", 1.0, plateau, location=(-560, -800)), 0.12, location=(-380, -800))
+        groove = _math(mat, "MULTIPLY", _math(mat, "SUBTRACT", 1.0, plateau, location=(-560, -800)), 0.025, location=(-380, -800))
         pore_rough = _math(mat, "MULTIPLY", dimple, 0.06, location=(-380, -700))
         rough = _math(mat, "ADD", source, groove, location=(-200, -800))
         rough = _math(mat, "ADD", rough, pore_rough, clamp=True, location=(-40, -800))
@@ -3138,11 +3136,11 @@ def _add_oil_layer(mat: bpy.types.Material, bsdf, convex) -> None:
         return
     vector = mapping.outputs["Vector"]
     oil = _map01(mat, _noise(mat, vector, 14.0, 3.0, 0.55, "Sebum patches", (-1000, 1400)), 0.42, 0.74, (-780, 1400))
-    weight = _math(mat, "ADD", 0.015, _math(mat, "MULTIPLY", oil, 0.06, location=(-560, 1400)), location=(-380, 1400))
+    weight = _math(mat, "ADD", 0.008, _math(mat, "MULTIPLY", oil, 0.025, location=(-560, 1400)), location=(-380, 1400))
     if convex is not None:
-        weight = _math(mat, "ADD", weight, _math(mat, "MULTIPLY", convex, 0.035, location=(-560, 1250)), clamp=True, location=(-200, 1400))
+        weight = _math(mat, "ADD", weight, _math(mat, "MULTIPLY", convex, 0.015, location=(-560, 1250)), clamp=True, location=(-200, 1400))
     mat.node_tree.links.new(weight, bsdf.inputs["Coat Weight"])
-    _set(bsdf, "Coat Roughness", 0.22)
+    _set(bsdf, "Coat Roughness", 0.32)
     _set(bsdf, "Coat IOR", 1.45)
     _set(bsdf, "Coat Tint", (1.0, 1.0, 1.0, 1.0))
     bump = _node_by_label(mat, "Skin micro-relief")

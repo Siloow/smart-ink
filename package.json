@@ -22,7 +22,7 @@
     "test:appearance-server": "PYTHONDONTWRITEBYTECODE=1 server/.venv/bin/python tools/appearance-backend.test.py",
     "test:studio": "node tools/studio.test.mjs && node tools/studio-light-controls.test.mjs && node tools/studio-lighting.test.mjs && node tools/studio-parity.test.mjs",
     "test:studio-server": "PYTHONDONTWRITEBYTECODE=1 server/.venv/bin/python tools/studio-backend.test.py",
-    "test:snapshot": "node tools/snapshot-session.test.mjs && node tools/snapshot-overlay.test.mjs && node tools/snapshot-workspace.test.mjs && node tools/snapshot-camera-controls.test.mjs && node tools/tattoo-camera.test.mjs && node tools/tattoo-source.test.mjs",
+    "test:snapshot": "node tools/snapshot-session.test.mjs && node tools/snapshot-overlay.test.mjs && node tools/snapshot-workspace.test.mjs && node tools/snapshot-camera-controls.test.mjs && node tools/tattoo-camera.test.mjs && node tools/tattoo-source.test.mjs && node tools/cinematic-presets.test.mjs",
     "test:realism": "PYTHONDONTWRITEBYTECODE=1 server/.venv/bin/python tools/render-realism.test.py",
     "test:inspector": "node tools/adjustment-control.test.mjs && node tools/inspector-tabs.test.mjs && node tools/viewport-controls.test.mjs && node tools/editor-history.test.mjs && node tools/editor-history-bindings.test.mjs && node tools/editor-undo-workspace.test.mjs",
     "test:measurements": "node tools/measurements.test.mjs && node tools/measurement-render.test.mjs"
