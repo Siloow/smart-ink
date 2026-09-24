@@ -17,7 +17,7 @@ try {
  const result=await service.renderContract(contract,png);URL.revokeObjectURL(result);
  assert.deepEqual(calls.map(c=>c.action),['submit','status']);assert.equal(calls[0].jobId,calls[1].jobId);assert.deepEqual(downloads,['owner/result.png']);assert.equal(calls[0].contract.inkTextureUrl,'ink.png');
  gateway(body=>Response.json(body.action==='submit'?{status:'IN_QUEUE'}:{status:'COMPLETED',path:'owner/large.png'}));
- const large=await service.renderContract({...contract,output:{...contract.output,width:2560,height:1280}},png);URL.revokeObjectURL(large);assert.equal(calls[0].contract.output.width,2048);assert.equal(calls[0].contract.output.height,1024);
+ const large=await service.renderContract({...contract,output:{...contract.output,width:2560,height:1280}},png);URL.revokeObjectURL(large);assert.equal(calls[0].contract.output.width,2560);assert.equal(calls[0].contract.output.height,1280);
  session=null;calls=[];await assert.rejects(service.renderContract(contract,png),/Sign in/);assert.equal(calls.length,0);session={access_token:'test-user-jwt'};
  for(const failCancel of [false,true]){
   const controller=new AbortController();

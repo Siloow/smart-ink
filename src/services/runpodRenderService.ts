@@ -38,9 +38,9 @@ export async function renderOnRunpod(contract: RenderContract, ink: Blob, opts: 
   let submitted = false;
   let completed = false;
   try {
-    const scale = Math.min(1, 2048 / Math.max(contract.output.width, contract.output.height));
+    const scale = Math.min(1, 2560 / Math.max(contract.output.width, contract.output.height));
     const output = { ...contract.output, width: Math.round(contract.output.width * scale), height: Math.round(contract.output.height * scale) };
-    opts.onStatusChange?.('uploading', scale < 1 ? 'Sending your scene… Beta renders use up to 2048 pixels.' : 'Sending your scene…');
+    opts.onStatusChange?.('uploading', scale < 1 ? 'Sending your scene… Beta renders use up to 2560 pixels.' : 'Sending your scene…');
     // Let submission finish on user abort, then cancel its known ID. Aborting /submit
     // in flight would hide whether a billable job was accepted.
     submitted = true;
@@ -58,7 +58,7 @@ export async function renderOnRunpod(contract: RenderContract, ink: Blob, opts: 
       }
       if (['FAILED', 'CANCELLED', 'TIMED_OUT'].includes(reply.status ?? '')) {
         completed = true;
-        throw new Error(reply.error ?? (reply.status === 'CANCELLED' ? 'Render cancelled.' : 'Render timed out. Please try again.'));
+        throw new Error(reply.error ?? (reply.status === 'CANCELLED' ? 'Render cancelled.' : reply.status === 'FAILED' ? 'The render could not finish. Please try again.' : 'Render timed out. Please try again.'));
       }
       opts.onStatusChange?.('rendering', reply.status === 'IN_QUEUE' || reply.status === 'SUBMITTING'
         ? 'Waiting for a GPU… First renders can take a few minutes to start.' : 'Rendering your scene…');

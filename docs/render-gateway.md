@@ -14,7 +14,7 @@ Optional server secrets: `RUNPOD_ENDPOINT_ID` (defaults to `diyhc9fflfp8rj`) and
 ## Limits and behavior
 
 - One active render per user; 10 reservations/hour, 30/day per user, 100/day globally. Failed attempts count. Reservations expire after 30 minutes. A database advisory lock prevents concurrent requests from exceeding quotas.
-- Up to 2048 pixels per edge, 512 samples, 6 MiB ink PNG and 5 MiB output PNG. The frontend scales larger exports to 2048 pixels while preserving aspect ratio.
+- Up to 2560 pixels per edge, 512 samples, 6 MiB ink PNG and 50 MiB stored output PNG. Detailed snapshots retain their full 2560-pixel longest edge; larger exports are bounded to 2560 while preserving aspect ratio.
 - RunPod execution timeout is 11 minutes; job TTL is 15 minutes. Submission is never automatically retried because a lost response could create duplicate billable work.
 - Polling returns progress and preview images. Completed images are saved in the private `renders` bucket and added to render history before completion is reported. Chunked results are decoded individually and reassembled.
 - Keep the page open until completion. Persistence currently happens during polling; closing the browser early can leave a result unsaved. There is no background webhook or resume-on-reload yet.
@@ -26,3 +26,11 @@ Optional server secrets: `RUNPOD_ENDPOINT_ID` (defaults to `diyhc9fflfp8rj`) and
 `deno test tools/render-gateway.test.ts`, `node tools/runpod-render-service.test.mjs`, `node tools/render-service.test.mjs`, `npm run typecheck`, and `npm run build`.
 
 To roll back the frontend transport, set `VITE_RENDER_BACKEND=http` and rebuild. The HTTP renderer then uses the existing `VITE_RENDER_URL`. Keep the private job table for history and diagnostics.
+
+## Direct image storage
+
+The gateway creates an upsert-capable signed upload URL for exactly `renders/{user id}/{job id}.png` after reserving the authenticated user's job. It sends that URL only to the worker. Supabase's service-role key stays in the gateway. Signed uploads expire after two hours; job TTL is fifteen minutes.
+
+The worker validates the destination, uploads the full PNG over HTTPS without redirects, and returns only the owned path, dimensions and byte count. One transient upload retry is allowed. The gateway checks the expected path and dimensions and verifies the private object with HEAD before writing render history. The browser downloads it using the existing signed-in Storage client and owner-read policy. The bucket remains private. Previous inline worker outputs are supported during rollout.
+
+Deploy in order: build and test the image, update RunPod to its immutable digest, deploy `supabase/functions/render-job/index.ts`, then deploy the frontend. Keep endpoint workers at min 0 / max 1. No new secret or migration is required; the existing renders bucket already allows 50 MiB files. Confirm a Detailed render larger than 5 MiB downloads and reopens from history before declaring the rollout verified.
