@@ -1,3 +1,6 @@
+import { deformFit, heightWarp, type BodyFit } from './measurements/fitter';
+import { loadFitAsset } from './measurements/service';
+import { measurementGuide, type MeasurementGuide } from './measurements/geometry';
 import { createPreviewEyes } from './render/previewEyes';
 import { tattooFramingFromGeometry, type TattooFraming } from './render/tattooCamera';
 import { resolveTattooSource } from './render/tattooSource';
@@ -12,6 +15,7 @@ import { visibleRegionPoints, framingFromPoints, regionAtTriangle } from './rend
 import type { RegionFraming } from './render/focusCamera';
 export type { RegionFraming } from './render/focusCamera';
 import {
+  use,
   useRef,
   useState,
   useEffect,
@@ -32,6 +36,7 @@ import {
   applyBodyShape,
   DEFAULT_BODY_SHAPE,
   prepareDeformable,
+  refreshDeformableGeometry,
   shapeBounds,
   type BodyShape,
   type Deformable,
@@ -267,6 +272,7 @@ export interface ModelWithUVTattooHandle {
   placeInView: () => boolean;
   getPlacement: () => UVTattooPlacementSnapshot;
   getRegionFraming: () => RegionFraming | null;
+  getMeasurementGuide: (key: string) => MeasurementGuide | null;
   getTattooFraming: () => TattooFraming | null;
 }
 
@@ -291,6 +297,7 @@ interface ModelWithUVTattooProps {
   performanceMode?: boolean;
   /** Sims-style shape sliders; identity when omitted. */
   bodyShape?: BodyShape;
+  bodyFit?: BodyFit | null;
   /** Joint angles applied after body proportions; tattoos follow the same skin. */
   bodyPose?: BodyPose;
   bodyAppearance?: BodyAppearance;
@@ -330,6 +337,7 @@ const ModelWithUVTattoo = forwardRef<ModelWithUVTattooHandle, ModelWithUVTattooP
       lights = [],
       intensityScale = 1,
       bodyShape = DEFAULT_BODY_SHAPE,
+      bodyFit = null,
       bodyPose = DEFAULT_BODY_POSE,
       bodyAppearance = DEFAULT_BODY_APPEARANCE,
       isolateRegion = null,
@@ -341,6 +349,7 @@ const ModelWithUVTattoo = forwardRef<ModelWithUVTattooHandle, ModelWithUVTattooP
     ref
   ) {
     const { camera, scene, gl } = useThree();
+    const fitAsset = bodyFit ? use(loadFitAsset(bodyFit.bodyMeshId)) : null;
     const [cloneGroup, setCloneGroup] = useState<THREE.Object3D | null>(null);
     const pickTargetRef = useRef<THREE.Object3D | null>(null);
     const deformablesRef = useRef<{ items: Deformable[]; bounds: ShapeBounds } | null>(null);
@@ -601,11 +610,23 @@ const ModelWithUVTattoo = forwardRef<ModelWithUVTattooHandle, ModelWithUVTattooP
       const prepared = deformablesRef.current;
       const mesh = bodyMeshRef.current;
       if (!cloneGroup || !prepared || !mesh) return;
-      applyBodyShape(prepared.items, prepared.bounds, bodyShape);
+      applyBodyShape(prepared.items, prepared.bounds, bodyFit ? DEFAULT_BODY_SHAPE : bodyShape);
+      if (bodyFit && fitAsset) {
+        const fitted = deformFit(fitAsset, bodyFit), position = mesh.geometry.getAttribute('position') as THREE.BufferAttribute;
+        if (position.count !== fitAsset.indices.length) throw new Error('The fitted body does not match this model version.');
+        for (let i = 0; i < position.count; i++) position.setXYZ(i, fitted[fitAsset.indices[i] * 3], fitted[fitAsset.indices[i] * 3 + 1], fitted[fitAsset.indices[i] * 3 + 2]);
+        refreshDeformableGeometry(prepared.items[0]);
+        const warp = heightWarp(fitAsset.H, bodyFit.measurements.height, bodyFit.measurements.inseam);
+        for (const eye of prepared.items.slice(1)) {
+          const p = eye.geometry.getAttribute('position') as THREE.BufferAttribute;
+          for (let i = 0; i < p.count; i++) p.setXYZ(i, eye.base[i * 3] * warp.scale, warp.sample(eye.base[i * 3 + 1]), eye.base[i * 3 + 2] * warp.scale);
+          refreshDeformableGeometry(eye);
+        }
+      }
       shapedPositionsRef.current = new Float32Array(mesh.geometry.getAttribute('position').array);
       applyBodyPose(prepared.items, prepared.bounds, bodyPose);
       recenterGroup(cloneGroup, mesh);
-    }, [cloneGroup, bodyShape, bodyPose]);
+    }, [cloneGroup, bodyShape, bodyPose, bodyFit, fitAsset]);
 
     // Garments are separate local-space meshes; their size must never change
     // the figure's origin or its saved tattoo anchors. Focus exposes the skin.
@@ -627,7 +648,7 @@ const ModelWithUVTattoo = forwardRef<ModelWithUVTattooHandle, ModelWithUVTattooP
       groups.forEach((group) => mesh.add(group));
       appearanceGroupsRef.current = groups;
       cloneGroup.updateMatrixWorld(true);
-    }, [cloneGroup, bodyShape, bodyPose, bodyAppearance, isolateRegion]);
+    }, [cloneGroup, bodyShape, bodyPose, bodyAppearance, bodyFit, isolateRegion]);
 
     /** World-space bounds of one region of the reshaped figure. */
     const regionFraming = useCallback(
@@ -797,6 +818,7 @@ const ModelWithUVTattoo = forwardRef<ModelWithUVTattooHandle, ModelWithUVTattooP
         } : undefined,
       }),
       getRegionFraming: () => regionFraming(isolateRegion),
+      getMeasurementGuide: (key) => bodyMeshRef.current ? measurementGuide(bodyMeshRef.current, key) : null,
       getTattooFraming: () => {
         const mesh = bodyMeshRef.current, anchor = anchorRef.current;
         if (!mesh || !anchor || !hasPlacedRef.current || loadedImageRef.current !== resolveTattooSource(uploadedImage)) return null;

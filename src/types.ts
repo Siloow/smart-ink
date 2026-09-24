@@ -1,3 +1,4 @@
+import type { BodyFit } from './measurements/fitter';
 import type { SurfaceAnchor } from './render/surfacePlacement';
 import type { BodyRegionId } from './render/bodyRegions';
 import type { LightDefinition } from './config/lightingPresets';
@@ -42,6 +43,7 @@ export interface SceneData {
   finalSamples?: number;
   /** Sims-style shape sliders; see src/render/bodyShape.ts. */
   bodyShape?: Record<string, number>;
+  bodyFit?: BodyFit | null;
   /** Body part cut out in the editor, or null/absent for the whole figure. */
   bodyRegion?: BodyRegionId | null;
   createdAt: Date;

@@ -16,6 +16,7 @@ import AdjustmentControl from './AdjustmentControl';
 import { SHAPE_PANEL_GROUPS, type BodyRegionId } from './render/bodyRegions';
 
 export interface CharacterBuilderSectionsProps {
+  shapeDisabled?: boolean;
   skinToneId: string;
   lookId: string;
   onSkinChange: (id: string) => void;
@@ -59,6 +60,7 @@ function trackStyle(key: BodyShapeKey, value: number): React.CSSProperties {
 
 export default function CharacterBuilderSections({
   skinToneId,
+  shapeDisabled = false,
   onSkinChange,
   bodyShape,
   onBodyShapeChange,
@@ -94,7 +96,7 @@ export default function CharacterBuilderSections({
         </div>
       </Section>
 
-      <Section label="Body shape">
+      <div inert={shapeDisabled} style={shapeDisabled ? { opacity: .45 } : undefined}><Section label="Body shape">
         <p className="ep-hint shape-help" id={shapeHelpId}>
           Choose a starting shape, then fine-tune it. Zero is the original shape.
         </p>
@@ -144,7 +146,7 @@ export default function CharacterBuilderSections({
         >
           Reset shape
         </button>
-      </Section>
+      </Section></div>
 
     </>
   );

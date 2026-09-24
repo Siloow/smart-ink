@@ -20,7 +20,7 @@ const anchor = faceIndex => ({ bodyMeshId: 'body_full', faceIndex, barycentric: 
 const initial = {
   uploadedImage: null, decalRotation: 0, decalScale: 1, decalColor: '#ffffff', decalOpacity: 1,
   decalVisible: false, surfacePlacement: null, decalPosition: null, decalNormal: null,
-  bodyMeshId: 'body_full', skinToneId: 'tone_03', bodyShape: { arms: 0 }, bodyPose: { leftElbow: 0 },
+  bodyFit: null, bodyMeshId: 'body_full', skinToneId: 'tone_03', bodyShape: { arms: 0 }, bodyPose: { leftElbow: 0 },
   poseId: 'neutral', bodyAppearance: { top: 'none', hairStyle: 'none' }, studio: { mode: 'plain', color: '#ffffff' },
   background: 'white', lightingPreset: 'studio', lights: [{ type: 'ambient', intensity: .2 }], lookId: 'studio_softbox',
 };
@@ -50,6 +50,8 @@ history.endGesture(); undo(); assert.equal(current.surfacePlacement.faceIndex, 2
 // Body switch invalidates its placement atomically, and undo restores both.
 change({ bodyMeshId: 'body_full_female', surfacePlacement: null, decalVisible: false }); undo();
 assert.equal(current.bodyMeshId, 'body_full'); assert.equal(current.surfacePlacement.faceIndex, 40);
+change({ bodyFit: { version: 1, measurements: { height: 175 } } }); undo();
+assert.equal(current.bodyFit, null); redo(); assert.equal(current.bodyFit.measurements.height, 175); undo();
 change({ bodyShape: { arms: .4 }, bodyPose: { leftElbow: 40 }, poseId: 'custom', bodyAppearance: { top: 'tshirt', hairStyle: 'short' } }); undo();
 assert.deepEqual(current.bodyShape, { arms: 0 }); assert.equal(current.bodyAppearance.top, 'none');
 change({ decalOpacity: 0, decalRotation: -180, decalScale: .1, uploadedImage: 'data:image/png;base64,example' }); undo();

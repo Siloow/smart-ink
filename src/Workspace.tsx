@@ -1,3 +1,9 @@
+import MeasurementOverlay from './measurements/MeasurementOverlay'
+import MeasurementScene from './measurements/MeasurementScene'
+import { loadFitAsset, fitBody } from './measurements/service'
+import type { BodyFit, FitAsset } from './measurements/fitter'
+import { MEASURE_STEPS, type MeasureStep } from './measurements/steps'
+import type { CameraView } from './render/cameraTransition'
 import { usesRunpodGateway } from './services/cloudRenderService'
 import { useState, useEffect, useRef, useCallback, useMemo, useSyncExternalStore, Suspense } from 'react'
 import type { CSSProperties } from 'react'
@@ -223,6 +229,13 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
     })
     setPoseId(preset?.id ?? 'custom')
   }, [])
+  const [bodyFit, setBodyFit] = useState<BodyFit | null>(null)
+  const [measureOpen, setMeasureOpen] = useState(false)
+  const [measureLoading, setMeasureLoading] = useState(false)
+  const [measureAsset, setMeasureAsset] = useState<FitAsset | null>(null)
+  const [measureError, setMeasureError] = useState('')
+  const [measureStep, setMeasureStep] = useState<MeasureStep | null>(MEASURE_STEPS[0])
+  const measureReturnCamera = useRef<CameraView | null>(null)
   const [bodyShape, setBodyShape] = useState<BodyShape>(() => ({ ...DEFAULT_BODY_SHAPE }))
   /** Body part cut out of the viewport, or null for the whole figure. */
   const [isolateRegion, setIsolateRegion] = useState<BodyRegionId | null>(null)
@@ -249,8 +262,9 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
   )
 
   const handleShapeValueChange = useCallback((key: BodyShapeKey, value: number) => {
+    if (bodyFit) return
     setBodyShape((prev) => ({ ...prev, [key]: clampShapeValue(key, value) }))
-  }, [])
+  }, [bodyFit])
 
   const handleFrameRegion = useCallback((framing: RegionFraming | null) => {
     if (!framing) return
@@ -343,6 +357,25 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
 
   const canvasContainerRef = useRef<HTMLDivElement>(null)
   const canvasHostRef = useRef<HTMLDivElement>(null)
+  const frameMeasurement = useCallback((next: CameraView) => { setCameraState(next); setCameraRequestId(id => id + 1) }, [])
+  const closeMeasurement = useCallback(() => {
+    setMeasureOpen(false)
+    if (measureReturnCamera.current) { setCameraState(measureReturnCamera.current); setCameraRequestId(id => id + 1) }
+    measureReturnCamera.current = null
+    requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('[aria-label="Body measurements"] button')?.focus())
+  }, [])
+  const openMeasurement = async () => {
+    if (modelLoading || measureLoading || snapshot.open) return
+    setMeasureLoading(true); setMeasureError('')
+    try {
+      const asset = await loadFitAsset(bodyMeshId)
+      setMeasureAsset(asset); setMeasureStep(MEASURE_STEPS[0]); setShapeMenu(null); setPanelRegions([])
+      measureReturnCamera.current = orbitControlsRef.current?.freezeSnapshot(true) ?? cameraState
+      setMeasureOpen(true)
+    } catch (error) { setMeasureError(error instanceof Error ? error.message : 'The measurement guide could not load.') }
+    finally { setMeasureLoading(false) }
+  }
+
 
   useEffect(() => {
     if (!showExportModal) return
@@ -364,9 +397,9 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
   // panel navigation, rendering and Focus. Image strings are shared by entries.
   const editValue = useMemo(() => ({ uploadedImage, decalRotation, decalScale, decalColor,
     decalOpacity, decalVisible, surfacePlacement, decalPosition, decalNormal, bodyMeshId,
-    skinToneId, bodyShape, bodyPose, poseId, bodyAppearance, studio, background, lightingPreset, lights, lookId }),
+    skinToneId, bodyShape, bodyFit, bodyPose, poseId, bodyAppearance, studio, background, lightingPreset, lights, lookId }),
   [uploadedImage, decalRotation, decalScale, decalColor, decalOpacity, decalVisible, surfacePlacement,
-    decalPosition, decalNormal, bodyMeshId, skinToneId, bodyShape, bodyPose, poseId, bodyAppearance,
+    decalPosition, decalNormal, bodyMeshId, skinToneId, bodyShape, bodyFit, bodyPose, poseId, bodyAppearance,
     studio, background, lightingPreset, lights, lookId])
   const restoreEdits = useCallback((value: typeof editValue) => {
     setUploadedImage(value.uploadedImage)
@@ -374,7 +407,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
     setDecalColor(value.decalColor); setDecalOpacity(value.decalOpacity); setDecalVisible(value.decalVisible)
     setSurfacePlacement(value.surfacePlacement); setDecalPosition(value.decalPosition); setDecalNormal(value.decalNormal)
     setBodyMeshId(value.bodyMeshId); setSkinToneId(value.skinToneId)
-    setBodyShape(value.bodyShape); setBodyPose(value.bodyPose); setPoseId(value.poseId)
+    setBodyFit(value.bodyFit); setBodyShape(value.bodyShape); setBodyPose(value.bodyPose); setPoseId(value.poseId)
     setBodyAppearance(value.bodyAppearance); setStudio(value.studio); setBackground(value.background)
     setLightingPreset(value.lightingPreset); setLights(value.lights); setLookId(value.lookId)
     setShapeMenu(null); setPanelRegions([]); setSelectedLight(null)
@@ -382,9 +415,9 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
   }, [])
   const editHistory = useEditorHistory({ value: editValue, onRestore: restoreEdits,
     scopeId: currentScene?.id, enabled: Boolean(currentScene) && !showDashboard })
-  const historyBlocked = showDashboard || snapshot.open || showExportModal || showRenderHistory || modelLoading
-  const historyCommands = useRef({ ...editHistory, blocked: historyBlocked, gesturesBlocked: showDashboard || modelLoading })
-  historyCommands.current = { ...editHistory, blocked: historyBlocked, gesturesBlocked: showDashboard || modelLoading }
+  const historyBlocked = measureOpen || showDashboard || snapshot.open || showExportModal || showRenderHistory || modelLoading
+  const historyCommands = useRef({ ...editHistory, blocked: historyBlocked, gesturesBlocked: measureOpen || showDashboard || modelLoading })
+  historyCommands.current = { ...editHistory, blocked: historyBlocked, gesturesBlocked: measureOpen || showDashboard || modelLoading }
   useEffect(() => {
     const root = canvasContainerRef.current
     if (!root || showDashboard) return
@@ -401,6 +434,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
   type Shot = { contract: RenderContract; inkBlob: Blob }
 
   const buildShot = useCallback(async (options?: { snapshot?: SnapshotQuality; signal?: AbortSignal }): Promise<Shot> => {
+    if (bodyFit) throw new Error('This measured body is ready for viewport image export. Blender snapshots do not support measurement fits yet. Remove the measurement fit to render the original figure.')
     options?.signal?.throwIfAborted()
     if (options?.snapshot && (modelLoading || !uvPlacementRef.current?.getRegionFraming())) {
       throw new Error('Wait for the figure to finish loading before taking a snapshot.')
@@ -429,7 +463,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
       : await blankInkLayer()
     options?.signal?.throwIfAborted()
     return { contract: frozenContract, inkBlob }
-  }, [uploadedImage, decalVisible, exportPreset, bodyMeshId, skinToneId, poseId, lookId, qualityTier, finalSamples, bodyShape, bodyPose, bodyAppearance, isolateRegion, cameraState, lightingPreset, lights, studio, background, modelLoading])
+  }, [bodyFit, uploadedImage, decalVisible, exportPreset, bodyMeshId, skinToneId, poseId, lookId, qualityTier, finalSamples, bodyShape, bodyPose, bodyAppearance, isolateRegion, cameraState, lightingPreset, lights, studio, background, modelLoading])
 
   const handleLookChange = useCallback((id: string) => {
     setLookId(id)
@@ -451,6 +485,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
     setCurrentScene(migrated)
     setUploadedImage(migrated.decalImage)
     setBodyMeshId(migrated.bodyMeshId!)
+    setBodyFit(migrated.bodyFit?.bodyMeshId === migrated.bodyMeshId ? migrated.bodyFit ?? null : null)
     setSkinToneId(migrated.skinToneId!)
     setPoseId(migrated.poseId!)
     setBodyPose(normalizePose(migrated.bodyPose))
@@ -487,7 +522,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
 
   // Save editor state to current scene (except thumbnail)
   useEffect(() => {
-    if (!currentScene || showDashboard) return
+    if (!currentScene || showDashboard || measureOpen) return
     const updated: SceneData = {
       ...currentScene,
       decalImage: uploadedImage,
@@ -514,6 +549,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
       qualityTier,
       finalSamples,
       bodyShape,
+      bodyFit,
       bodyRegion: isolateRegion,
       // thumbnail will be updated in a separate effect
     }
@@ -524,13 +560,13 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
     // currentScene is deliberately not a dependency: this effect writes it, so
     // including it would re-run on every save and loop forever.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentScene?.id, showDashboard, stageScene, flushPendingSave, uploadedImage, decalVisible, surfacePlacement, decalRotation, decalScale, decalColor, decalOpacity, decalPosition, decalNormal, background, studio, lightingPreset, lights, cameraState, bodyMeshId, skinToneId, poseId, lookId, qualityTier, finalSamples, bodyShape, bodyPose, bodyAppearance, isolateRegion])
+  }, [currentScene?.id, showDashboard, measureOpen, bodyFit, stageScene, flushPendingSave, uploadedImage, decalVisible, surfacePlacement, decalRotation, decalScale, decalColor, decalOpacity, decalPosition, decalNormal, background, studio, lightingPreset, lights, cameraState, bodyMeshId, skinToneId, poseId, lookId, qualityTier, finalSamples, bodyShape, bodyPose, bodyAppearance, isolateRegion])
 
   // Capture a dashboard thumbnail once the user pauses. Encoding the full
   // canvas on every change produced multi-megabyte data URLs and a save per
   // slider tick; this waits for 1.5 s of quiet and shrinks to 512 px.
   useEffect(() => {
-    if (!currentScene || showDashboard || !canvasContainerRef.current) return
+    if (!currentScene || showDashboard || measureOpen || !canvasContainerRef.current) return
     const timeout = setTimeout(() => {
       if (document.hidden) return
       const canvas = canvasContainerRef.current?.querySelector('canvas') as HTMLCanvasElement | null
@@ -550,11 +586,12 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
       void flushPendingSave().catch(() => {})
     }, 1500)
     return () => clearTimeout(timeout)
-  }, [currentScene, showDashboard, sceneSaves, stageScene, flushPendingSave, uploadedImage, surfacePlacement, decalRotation, decalScale, decalColor, decalOpacity, decalPosition, decalNormal, background, studio, lightingPreset, lights, cameraState, bodyShape, bodyPose, bodyAppearance, isolateRegion])
+  }, [currentScene, showDashboard, measureOpen, bodyFit, sceneSaves, stageScene, flushPendingSave, uploadedImage, surfacePlacement, decalRotation, decalScale, decalColor, decalOpacity, decalPosition, decalNormal, background, studio, lightingPreset, lights, cameraState, bodyShape, bodyPose, bodyAppearance, isolateRegion])
 
   const handleBodyMeshChange = (id: string) => {
     if (id === bodyMeshId || !findById(REGISTRY.bodyMeshes, id)) return
     setBodyMeshId(id)
+    setBodyFit(null)
     setSurfacePlacement(null)
     setDecalPosition(null)
     setDecalNormal(null)
@@ -878,8 +915,8 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
   }
 
   return (
-    <div className={`editor-app-root${photoMode ? ' editor-app-root--photo' : ''}`} ref={canvasContainerRef}>
-      <header className="editor-toolbar editor-toolbar--main" inert={snapshot.open}>
+    <div className={`editor-app-root${measureOpen ? ' editor-app-root--measuring' : ''}${photoMode ? ' editor-app-root--photo' : ''}`} ref={canvasContainerRef}>
+      <header className="editor-toolbar editor-toolbar--main" inert={snapshot.open || measureOpen || measureLoading}>
         <button type="button" className="editor-toolbar-brand editor-home-link" onClick={() => afterSaving(onHome)} aria-label="Smart Ink home">
           <span className="nav-logo nav-logo--sm" aria-hidden />
           Smart Ink
@@ -902,7 +939,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
           <span className={`scene-save-status scene-save-status--${saveState.status}`} role="status" aria-live="polite">
             {saveState.status === 'saved' ? 'Saved' : saveState.status === 'error' ? 'Not saved' : 'Saving…'}
           </span>
-          {saveState.status === 'error' && <button type="button" className="tool-btn tool-btn--ghost" onClick={() => void flushPendingSave().catch(() => {})}>Retry save</button>}
+      {saveState.status === 'error' && <button type="button" className="tool-btn tool-btn--ghost" onClick={() => void flushPendingSave().catch(() => {})}>Retry save</button>}
         </div>
         <div className="editor-toolbar-actions editor-toolbar-actions--spread">
           <div className="editor-history-controls" role="group" aria-label="Edit history">
@@ -944,8 +981,9 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
         </div>
       </header>
 
+      {measureError && <div className="editor-notice" role="alert">{measureError}<button type="button" className="ep-btn" onClick={() => setMeasureError('')}>Dismiss</button></div>}
       {saveState.status === 'error' && <div className="editor-notice" role="alert">Your latest changes are still here. Saving failed; retry before leaving this page.</div>}
-      {photoMode && <div className="photo-mode-actions" inert={snapshot.open} style={snapshot.open ? { visibility: 'hidden' } : undefined}>
+      {photoMode && <div className="photo-mode-actions" inert={snapshot.open || measureOpen || measureLoading} style={snapshot.open ? { visibility: 'hidden' } : undefined}>
         <button type="button" className="ep-btn" onClick={() => setPhotoMode(false)}>Exit Clean view · Esc</button>
         <button type="button" className="ep-btn ep-btn--primary" onClick={openSnapshot} disabled={modelLoading || !canvasHostSized || renderBusy}>Snapshot</button>
         <button type="button" className="ep-btn" onClick={() => setShowExportModal(true)}>Export</button>
@@ -953,12 +991,12 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
       <div className="editor-body-row">
         <EditorLeftPanel currentImage={uploadedImage}
           onChooseArtwork={(source) => { setUploadedImage(source); setDecalVisible(true); setInspectorTab('tattoo'); setPanelRegions([]); uvPlacementRef.current?.placeInView() }}
-          disabled={snapshot.open || modelLoading}
+          disabled={snapshot.open || measureOpen || measureLoading || modelLoading}
           collapsed={sidebarCollapsed} onToggleCollapsed={() => setSidebarCollapsed(value => !value)}
           />
 
         <div className="editor-canvas-host">
-          {!photoMode && <ViewportControls disabled={snapshot.open || modelLoading}
+          {!photoMode && <ViewportControls disabled={snapshot.open || measureOpen || measureLoading || modelLoading}
             showPlacementTips={showPlacementTips} onPlacementTipsChange={togglePlacementTips}
             cameraPreset={cameraPreset} cameras={CAMERA_PRESETS}
             onCameraChange={(preset) => handleCameraPresetChange(preset as CameraPresetKey)}
@@ -1019,7 +1057,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
           performanceMode={performanceMode}
         />
         <StudioBackdrop studio={studio} isolateRegion={isolateRegion} performanceMode={performanceMode} />
-        {!photoMode && !snapshot.open && studio.showGuides && <LightHandles lights={lights} selectedIndex={selectedLight} onSelect={setSelectedLight} />}
+        {!photoMode && !snapshot.open && !measureOpen && studio.showGuides && <LightHandles lights={lights} selectedIndex={selectedLight} onSelect={setSelectedLight} />}
         <Suspense fallback={<LoadingSignal onChange={setModelLoading} />}>
           <ModelWithUVTattoo
             key={`${currentScene?.id}:${bodyMeshId}`}
@@ -1040,17 +1078,19 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
             intensityScale={LIGHTING_PRESETS[lightingPreset].threeIntensityScale}
             performanceMode={performanceMode}
             bodyShape={bodyShape}
-            bodyPose={bodyPose}
-            bodyAppearance={bodyAppearance}
-            isolateRegion={isolateRegion}
-            highlightRegions={photoMode || snapshot.open ? [] : highlightRegions}
-            editingEnabled={!photoMode && !snapshot.open}
-            onRegionPress={handleRegionPress}
-            onFrameRegion={handleFrameRegion}
+            bodyFit={bodyFit}
+            bodyPose={measureOpen ? DEFAULT_BODY_POSE : bodyPose}
+            bodyAppearance={measureOpen ? DEFAULT_BODY_APPEARANCE : bodyAppearance}
+            isolateRegion={measureOpen ? null : isolateRegion}
+            highlightRegions={photoMode || snapshot.open || measureOpen ? [] : highlightRegions}
+            editingEnabled={!photoMode && !snapshot.open && !measureOpen}
+            onRegionPress={bodyFit ? undefined : handleRegionPress}
+            onFrameRegion={measureOpen ? undefined : handleFrameRegion}
           />
         </Suspense>
+        {measureOpen && <MeasurementScene model={uvPlacementRef} step={measureStep} onFrame={frameMeasurement} />}
         <OrbitControlsWithCmdLock
-          enabled={!snapshot.open}
+          enabled={!snapshot.open && !measureOpen}
           key={currentScene?.id}
           ref={orbitControlsRef}
           cameraState={cameraState}
@@ -1062,7 +1102,7 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
             </ErrorBoundary>
             </>
             )}
-            {showPlacementTips && !modelLoading && !photoMode && !snapshot.open && (
+            {showPlacementTips && !modelLoading && !photoMode && !snapshot.open && !measureOpen && (
               <div className="placement-help" role="status" aria-live="polite">
                 <strong>Surface placement</strong>
                 <span>{placementStatus}</span>
@@ -1074,6 +1114,9 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
               </div>
             )}
           </div>
+          {measureOpen && measureAsset && <MeasurementOverlay initial={bodyFit?.measurements} baseline={measureAsset.baseline}
+            onFocus={setMeasureStep} onClose={closeMeasurement} completeLabel="Fit my body"
+            onComplete={async values => { const result = await fitBody(bodyMeshId, values); setBodyFit(result.fit); closeMeasurement() }} />}
           {snapshot.open && <SnapshotOverlay
             mode={snapshot.mode} onAdjust={snapshotSession.adjust}
             cameraControls={<SnapshotCameraControls adjustment={snapshotCamera} onChange={setSnapshotCamera}
@@ -1097,8 +1140,10 @@ export default function Workspace({ session, onHome, onSignOut }: WorkspaceProps
         </div>
 
         <TopMenuBar
+          onMeasureBody={() => void openMeasurement()} measuringLoading={measureLoading || modelLoading}
+          hasBodyFit={!!bodyFit} onClearBodyFit={() => setBodyFit(null)}
           activeTab={inspectorTab} onTabChange={setInspectorTab}
-          disabled={snapshot.open}
+          disabled={snapshot.open || measureOpen || measureLoading}
           key={currentScene?.id}
           bodyMeshId={bodyMeshId}
           onBodyMeshChange={handleBodyMeshChange}

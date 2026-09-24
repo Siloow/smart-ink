@@ -1,3 +1,4 @@
+import { normalizeBodyFit } from '../measurements/profile';
 import { normalizePose, poseFromPreset, BODY_POSE_PRESETS, BODY_POSE_KEYS } from '../render/bodyPose';
 import { normalizeShape } from '../render/bodyShape';
 import { REGION_INDEX, type BodyRegionId } from '../render/bodyRegions';
@@ -39,6 +40,7 @@ export function migrateScene(s: SceneData): SceneData {
     qualityTier: s.qualityTier ?? 'preview',
     finalSamples: clampFinalSamples(s.finalSamples ?? FINAL_SAMPLES.default),
     bodyShape: normalizeShape(s.bodyShape),
+    bodyFit: normalizeBodyFit(s.bodyFit, s.bodyMeshId ?? 'body_full'),
     bodyRegion: s.bodyRegion && s.bodyRegion in REGION_INDEX ? (s.bodyRegion as BodyRegionId) : null,
   };
 }

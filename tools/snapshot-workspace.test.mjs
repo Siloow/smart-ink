@@ -30,7 +30,7 @@ const { outputFiles } = await build({
   bundle: true, platform: 'node', format: 'esm', write: false,
 });
 const api = await import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString('base64')}`);
-const dependencies = ['useCallback', 'uvPlacementRef', 'uploadedImage', 'decalVisible', 'orbitControlsRef', 'cameraState', 'canvasHostRef', 'modelLoading', 'bakeInkLayer', 'blankInkLayer', 'snapshotOutput', 'exportDimensions', 'buildRenderContract', 'exportPreset', 'bodyMeshId', 'skinToneId', 'poseId', 'lookId', 'qualityTier', 'finalSamples', 'bodyShape', 'bodyPose', 'bodyAppearance', 'studio', 'studioForExport', 'background', 'BACKGROUNDS', 'isolateRegion', 'lightingPreset', 'lights', 'LIGHTING_PRESETS', 'resolveTattooSource'];
+const dependencies = ['bodyFit', 'useCallback', 'uvPlacementRef', 'uploadedImage', 'decalVisible', 'orbitControlsRef', 'cameraState', 'canvasHostRef', 'modelLoading', 'bakeInkLayer', 'blankInkLayer', 'snapshotOutput', 'exportDimensions', 'buildRenderContract', 'exportPreset', 'bodyMeshId', 'skinToneId', 'poseId', 'lookId', 'qualityTier', 'finalSamples', 'bodyShape', 'bodyPose', 'bodyAppearance', 'studio', 'studioForExport', 'background', 'BACKGROUNDS', 'isolateRegion', 'lightingPreset', 'lights', 'LIGHTING_PRESETS', 'resolveTattooSource'];
 const makeShot = await callback('buildShot', dependencies);
 const makeOpen = await callback('openSnapshot', ['renderBusy', 'modelLoading', 'canvasHostSized', 'setShapeMenu', 'setHoverRegion', 'setPanelRegions', 'setAccountMenuOpen', 'snapshotSession', 'currentShotBuilder', 'snapshotReturnCamera', 'orbitControlsRef', 'cameraState', 'setTattooFraming', 'setSnapshotHasTattoo', 'setSnapshotFramingHint', 'regionSnapshotFraming', 'setSnapshotCamera', 'uvPlacementRef', 'DEFAULT_TATTOO_CAMERA_ADJUSTMENT', 'currentScene']);
 const tick = () => new Promise((resolve) => setImmediate(resolve));
@@ -48,7 +48,7 @@ function fixture(overrides = {}) {
   const calls = { freeze: 0, freezeFlags: [], snapshot: 0, baked: [], blank: 0 };
   const ink = new Blob(['snapshot ink'], { type: 'image/png' });
   const scope = {
-    useCallback: (fn) => fn, modelLoading: false,
+    useCallback: (fn) => fn, modelLoading: false, bodyFit: null,
     uvPlacementRef: { current: { getPlacement: () => placement, getTattooFraming: () => ({ center: [.2, .8, .1], radius: .4 }), getRegionFraming: () => ({ center: [0, 0, 0], radius: 1 }) } },
     uploadedImage: 'data:image/png;base64,dGVzdA==', decalVisible: true,
     orbitControlsRef: { current: {
@@ -251,3 +251,5 @@ for (const background of ['gray', 'bluepurple', 'peach']) {
   f.dispose();
 }
 console.log('Viewport gradient choices survive the real snapshot builder.');
+
+{ const f = fixture({ bodyFit: { version: 1 } }); await assert.rejects(f.build()({ snapshot: 'quick' }), /Blender snapshots do not support measurement fits/); assert.equal(f.calls.baked.length, 0); f.dispose(); }

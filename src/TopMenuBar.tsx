@@ -17,6 +17,10 @@ import AdjustmentControl from './AdjustmentControl';
 
 interface TopMenuBarProps extends PoseControlsProps, AppearanceControlsProps, StudioControlsProps {
   disabled?: boolean;
+  onMeasureBody?: () => void;
+  measuringLoading?: boolean;
+  hasBodyFit?: boolean;
+  onClearBodyFit?: () => void;
   activeTab?: InspectorTab;
   onTabChange?: (tab: InspectorTab) => void;
   bodyMeshId: string;
@@ -84,6 +88,7 @@ export type InspectorTab = typeof INSPECTOR_TABS[number]['id'];
 
 export default function TopMenuBar({
   disabled = false,
+  onMeasureBody, measuringLoading, hasBodyFit, onClearBodyFit,
   activeTab: controlledTab,
   onTabChange,
   bodyMeshId,
@@ -300,6 +305,12 @@ export default function TopMenuBar({
       </>)}
 
       {panel('figure', <>
+        <section className="ep-section" aria-label="Body measurements">
+          <p className="ep-section-label">Your proportions</p>
+          <button type="button" className="ep-btn ep-btn--primary ep-btn--block" onClick={onMeasureBody} disabled={measuringLoading}>{measuringLoading ? 'Loading guide…' : hasBodyFit ? 'Edit measurements' : 'Measure body'}</button>
+          <p className="ep-hint">{hasBodyFit ? 'Fitted to your measurements. Viewport images include the fit; Blender snapshots are not supported yet.' : 'Follow the guide to fit this figure to your measurements.'}</p>
+          {hasBodyFit && <button type="button" className="ep-btn ep-btn--ghost" onClick={onClearBodyFit}>Remove measurement fit</button>}
+        </section>
         <section className="ep-section">
           <label className="ep-field-label" htmlFor={`${inspectorId}-body-model`}>Body model</label>
           <select id={`${inspectorId}-body-model`} className="ep-select" value={bodyMeshId}
@@ -307,7 +318,7 @@ export default function TopMenuBar({
             {REGISTRY.bodyMeshes.map((body) => <option key={body.id} value={body.id}>{body.label}</option>)}
           </select>
         </section>
-        <CharacterBuilderSections skinToneId={skinToneId} lookId={lookId} onSkinChange={onSkinChange}
+        <CharacterBuilderSections shapeDisabled={hasBodyFit} skinToneId={skinToneId} lookId={lookId} onSkinChange={onSkinChange}
           onLookChange={onLookChange} bodyShape={bodyShape} onBodyShapeChange={onBodyShapeChange}
           isolateRegion={isolateRegion} onIsolateRegionChange={onIsolateRegionChange}
           onFrameFocus={onFramePose} onHighlightRegions={onHighlightRegions} />

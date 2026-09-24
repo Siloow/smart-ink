@@ -1,0 +1,23 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import {gunzipSync} from 'node:zlib';
+import {build} from 'esbuild';
+const built=await build({stdin:{contents:"export * from './src/measurements/fitter'; export * from './src/measurements/profile'; export * from './src/storage/sceneStoreTypes';",resolveDir:process.cwd()},bundle:true,platform:'node',format:'esm',write:false});
+const {solveFit,deformFit,heightWarp,normalizeBodyFit,migrateScene,measurementError}=await import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`);
+const refs=JSON.parse(await fs.readFile('tools/fixtures/measurement-reference.json','utf8'));
+const assets=Object.fromEntries(await Promise.all(['male','female'].map(async sex=>[sex,JSON.parse(gunzipSync(await fs.readFile(`public/measurements/${sex}-v1.bin`)))])));
+for(const row of refs){const id=row.sex==='male'?'body_full':'body_full_female',asset=assets[row.sex],{fit,positions}=solveFit(asset,id,row.values);
+ assert.ok(fit.maxErrorMm<=2);let worst=0;
+ for(let i=0;i<row.ids.length;i++)worst=Math.max(worst,Math.hypot(...row.positions[i].map((n,k)=>n-positions[row.ids[i]*3+k])));
+ assert.ok(worst<.002,`${row.sex} ${row.label}: diverged ${worst*1000}mm from independent SciPy reference`);
+ const restored=migrateScene({bodyMeshId:id,bodyFit:JSON.parse(JSON.stringify(fit))});
+ assert.deepEqual(restored.bodyFit,fit);assert.deepEqual(Float32Array.from(deformFit(asset,restored.bodyFit)),positions);
+ assert.equal(normalizeBodyFit(fit,id==='body_full'?'body_full_female':'body_full'),null);
+ const warp=heightWarp(asset.H,row.values.height,row.values.inseam);assert.ok(Math.abs(warp.sample(asset.H)*100-row.values.height)<1e-8);assert.ok(Math.abs(warp.sample(.47*asset.H)*100-row.values.inseam)<1e-8);
+ console.log(`${row.sex} ${row.label}: ${fit.maxErrorMm.toFixed(3)} mm tape error; ${(worst*1000).toFixed(3)} mm maximum sampled difference from SciPy`);
+}
+assert.equal(normalizeBodyFit({version:1},'body_full'),null);
+assert.throws(()=>solveFit(assets.male,'body_full',{...assets.male.baseline,height:NaN}));
+assert.throws(()=>solveFit(assets.male,'body_full',{...assets.male.baseline,inseam:assets.male.baseline.height*.7}));
+assert.ok(measurementError('','height',{},assets.male.baseline));assert.ok(measurementError('NaN','height',{},assets.male.baseline));assert.equal(measurementError('175','height',{},assets.male.baseline),'');
+console.log('Measurement fitting, reference parity, profile migration and validation passed.');

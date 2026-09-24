@@ -55,7 +55,7 @@ for (const aspect of [0.25, 0.5625, 1, 2]) for (const direction of [[0, 0, 8], [
 const source = await fs.readFile(new URL('../src/Workspace.tsx', import.meta.url), 'utf8');
 const snippet = source.slice(source.indexOf('  const buildShot ='), source.indexOf('  const handleLookChange'));
 assert.ok(snippet.includes('const buildShot ='));
-const names = ['resolveTattooSource', 'modelLoading', 'canvasHostRef', 'snapshotOutput', 'useCallback', 'uvPlacementRef', 'uploadedImage', 'decalVisible', 'orbitControlsRef', 'cameraState', 'bakeInkLayer', 'blankInkLayer', 'exportDimensions', 'buildRenderContract', 'exportPreset', 'bodyMeshId', 'skinToneId', 'poseId', 'lookId', 'qualityTier', 'finalSamples', 'bodyShape', 'bodyPose', 'bodyAppearance', 'studio', 'studioForExport', 'background', 'BACKGROUNDS', 'isolateRegion', 'lightingPreset', 'lights', 'LIGHTING_PRESETS'];
+const names = ['bodyFit', 'resolveTattooSource', 'modelLoading', 'canvasHostRef', 'snapshotOutput', 'useCallback', 'uvPlacementRef', 'uploadedImage', 'decalVisible', 'orbitControlsRef', 'cameraState', 'bakeInkLayer', 'blankInkLayer', 'exportDimensions', 'buildRenderContract', 'exportPreset', 'bodyMeshId', 'skinToneId', 'poseId', 'lookId', 'qualityTier', 'finalSamples', 'bodyShape', 'bodyPose', 'bodyAppearance', 'studio', 'studioForExport', 'background', 'BACKGROUNDS', 'isolateRegion', 'lightingPreset', 'lights', 'LIGHTING_PRESETS'];
 const compiled = await transform(`(function(${names.join(',')}) { ${snippet}; return buildShot; })`, { loader: 'ts' });
 const createShot = (0, eval)(compiled.code);
 for (const visible of [false, true]) {

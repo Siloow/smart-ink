@@ -1,0 +1,36 @@
+.measure-overlay{position:absolute;inset:0;z-index:25;pointer-events:none;color:var(--text-primary);font-family:var(--font)}
+.measure-hud{position:absolute;top:18px;left:24px;right:24px;display:flex;align-items:center;gap:18px}
+.measure-mode-label{display:flex;gap:9px;align-items:center;font-size:12px;font-weight:600;background:var(--bg-sidebar);border:1px solid var(--ep-border);border-radius:var(--ep-radius-pill);padding:10px 14px}
+.measure-mode-label svg{color:var(--ep-accent)}
+.measure-progress{margin-left:auto;display:flex;align-items:center;gap:12px;font-size:11px;color:var(--text-secondary);background:var(--bg-sidebar);padding:8px 12px;border-radius:var(--ep-radius-md)}
+.measure-progress progress{width:90px;height:3px;accent-color:var(--ep-accent)}
+.measure-exit{pointer-events:auto;background:var(--bg-sidebar)}
+.measure-card{position:absolute;pointer-events:auto;right:28px;top:50%;transform:translateY(-50%);width:310px;padding:22px;background:var(--bg-sidebar);border:1px solid var(--ep-border);border-radius:var(--ep-radius-lg);box-shadow:0 12px 48px #0005;max-height:calc(100% - 116px);overflow:auto}
+.measure-card h2{font-size:22px;line-height:1.15;font-weight:550;letter-spacing:-.035em;margin:10px 0 12px}
+.measure-card p{font-size:12px;line-height:1.65;color:var(--text-secondary);margin:0 0 18px}
+.measure-card label{display:block;font-size:11px;color:var(--text-secondary);margin:0 0 8px}
+.measure-entry{display:flex;gap:8px}
+.measure-input{position:relative;min-width:0;flex:1}
+.measure-input input{box-sizing:border-box;width:100%;height:48px;min-width:0;background:var(--bg-input);color:var(--text-primary);border:1px solid var(--ep-border);border-radius:var(--ep-radius-md);padding:10px 35px 10px 12px;font:500 22px var(--font);appearance:textfield}
+.measure-input input::-webkit-inner-spin-button,.measure-input input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+.measure-input input::placeholder{font-size:14px;color:var(--text-muted)}
+.measure-input input:focus{outline:2px solid var(--ep-accent);outline-offset:2px}
+.measure-input span{position:absolute;right:12px;top:16px;color:var(--text-secondary);font-size:11px}
+.measure-entry .ep-btn{flex-shrink:0;padding:0 14px;gap:10px}
+.measure-back{display:flex;align-items:center;gap:8px;background:none;border:0;font:12px var(--font);color:var(--text-secondary);padding:0;cursor:pointer;margin-top:16px}
+.measure-back:disabled{opacity:.4;cursor:default}
+.measure-tips{border-top:1px solid var(--ep-border);padding-top:14px;margin-top:18px;font-size:11px;color:var(--text-secondary)}
+.measure-tips summary{cursor:pointer}.measure-tips p{margin:12px 0 0;font-size:11px}
+.measure-card .measure-error{color:#ff9e96;font-size:11px;margin:12px 0}
+.measure-card--review{width:350px;display:flex;flex-direction:column}
+.measure-review{list-style:none;margin:0;padding:0;min-height:70px;overflow:auto;flex:1}
+.measure-review li{display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--border-subtle);font-size:11px}
+.measure-review small{color:var(--text-secondary);font-weight:400}.measure-review .ep-btn{font-size:10px;padding:5px 7px}
+.measure-complete{margin-top:18px;flex-shrink:0;justify-content:center}
+.measure-connector{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.measure-connector path{fill:none;stroke:var(--ep-accent);stroke-width:1;opacity:.5}.measure-connector circle{fill:var(--bg-sidebar);stroke:var(--ep-accent);stroke-width:1.5}
+.editor-app-root--measuring .editor-right-panel,.editor-app-root--measuring .editor-left-panel,.editor-app-root--measuring .viewport-tools{display:none}
+@media(max-width:760px){.measure-hud{top:12px;left:14px;right:14px;gap:8px}.measure-mode-label{padding:8px 10px;font-size:11px}.measure-progress{gap:6px;padding:8px}.measure-progress progress{width:45px}.measure-card,.measure-card--review{left:14px;right:14px;bottom:14px;top:auto;transform:none;width:auto;max-height:53%;padding:18px}.measure-card h2{font-size:20px;margin:7px 0 10px}.measure-card p{margin-bottom:12px}.measure-tips{margin-top:12px;padding-top:12px}.measure-back{margin-top:12px}}
+.editor-app-root--measuring .editor-toolbar-actions{display:none}
+.editor-app-root--measuring .editor-toolbar--main{min-height:56px;flex-wrap:nowrap}
+.editor-app-root--measuring .editor-scene-heading{margin-left:auto}
